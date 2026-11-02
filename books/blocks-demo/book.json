@@ -1,0 +1,830 @@
+{
+  "title": "How computers get faster",
+  "subtitle": "PopBook block catalogue · every scene type in one short book",
+  "lang": "en",
+  "dir": "ltr",
+  "source": {
+    "file": "hand-written demo",
+    "pages": "-"
+  },
+  "spreads": [
+    {
+      "kind": "cover",
+      "short": "Cover & contents",
+      "slides": "Demo book",
+      "title": "How computers get faster",
+      "concept": "A tiny course written by hand to show every PopBook scene block. Each spread uses a different block; open them one by one and touch everything.",
+      "plan": [
+        "Amdahl's law (plot)",
+        "From source code to machine code (flow)",
+        "Layers of a computer (stack)",
+        "Queues and overload (model · tank)",
+        "Current through a resistor (model · dial)",
+        "Time sharing (scheduler)",
+        "CPU vs GPU (race)",
+        "Memory per year (bars, linear)",
+        "Shapes of data (showcase)"
+      ],
+      "fig": "Fig. 0 — Four objects scientists simulate. Touch each one.",
+      "scene": {
+        "type": "showcase",
+        "items": [
+          {
+            "id": "mol",
+            "model": "molecule",
+            "label": "Chemistry",
+            "sub": "molecular dynamics",
+            "tip": "Simulating how atoms move needs billions of small steps."
+          },
+          {
+            "id": "dna",
+            "model": "dna",
+            "label": "Genomics",
+            "sub": "sequence alignment",
+            "tip": "Comparing genomes means matching billions of letters."
+          },
+          {
+            "id": "gear",
+            "model": "gear",
+            "label": "Engineering",
+            "sub": "finite elements",
+            "tip": "Stress in a part is computed on a mesh of small elements."
+          },
+          {
+            "id": "flask",
+            "model": "flask",
+            "label": "Pharmacy",
+            "sub": "drug screening",
+            "tip": "Millions of candidate molecules are scored by computer."
+          }
+        ]
+      }
+    },
+    {
+      "short": "Amdahl's law",
+      "slides": "Demo · plot",
+      "title": "Amdahl's law: the serial part wins",
+      "concept": "If a fraction p of a program can run in parallel, n processors speed it up by at most 1/((1−p)+p/n). The serial part caps the gain, however many cores you add.",
+      "formula": {
+        "label": "LAW",
+        "eq": "S(n) = 1 / ((1 − p) + p / n)",
+        "note": "Limit when n → ∞ : S = 1/(1 − p)."
+      },
+      "vocab": [
+        [
+          "Speed-up",
+          "time on 1 processor ÷ time on n processors."
+        ],
+        [
+          "Parallel part",
+          "the fraction p that can be split."
+        ],
+        [
+          "Serial part",
+          "1 − p, must run on one core."
+        ]
+      ],
+      "quiz": {
+        "q": "With p = 0.9, what is the best speed-up you can ever reach?",
+        "opts": [
+          "× 9",
+          "× 10",
+          "unlimited"
+        ],
+        "a": 1
+      },
+      "why": "When n grows, p/n shrinks to zero and only the serial 10 % remains: S → 1/0.1 = 10. Drag the slider to p = 0.99 and the ceiling rises to 100.",
+      "fig": "Fig. 1 — Speed-up versus processors. Move the slider, then touch the curve.",
+      "scene": {
+        "type": "plot",
+        "expr": "1/((1-p)+p/x)",
+        "x": {
+          "label": "processors",
+          "min": 1,
+          "max": 64
+        },
+        "y": {
+          "label": "speed-up",
+          "min": 0,
+          "max": 20
+        },
+        "param": {
+          "id": "p",
+          "label": "parallel part p",
+          "min": 0.5,
+          "max": 0.99,
+          "step": 0.01,
+          "value": 0.9
+        },
+        "marks": [
+          {
+            "x": 16,
+            "label": "16 cores"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Compiler pipeline",
+      "slides": "Demo · flow",
+      "title": "From source code to machine code",
+      "concept": "A compiler works like an assembly line. Each stage takes the output of the previous one and hands a more precise form to the next.",
+      "formula": {
+        "label": "PIPELINE",
+        "eq": "text → tokens → tree → optimized tree → machine code",
+        "note": "Real compilers have more stages; these five are the classic ones."
+      },
+      "vocab": [
+        [
+          "Token",
+          "a word of the language: name, number, symbol."
+        ],
+        [
+          "Syntax tree",
+          "the program's grammar as a tree."
+        ],
+        [
+          "Optimizer",
+          "rewrites the tree to run faster."
+        ],
+        [
+          "Code gen",
+          "turns the tree into CPU instructions."
+        ]
+      ],
+      "quiz": {
+        "q": "Which stage first notices a missing parenthesis?",
+        "opts": [
+          "the lexer",
+          "the parser",
+          "code generation"
+        ],
+        "a": 1
+      },
+      "why": "The lexer only cuts the text into tokens; a lone parenthesis is still a valid token. The parser checks the grammar and fails when the tree cannot be built.",
+      "fig": "Fig. 2 — Press Run on the left page, or touch each stage.",
+      "scene": {
+        "type": "flow",
+        "token": "code",
+        "steps": [
+          {
+            "id": "src",
+            "label": "Source",
+            "tip": "The program as plain text written by a person."
+          },
+          {
+            "id": "lex",
+            "label": "Lexer",
+            "tip": "Cuts the text into tokens: names, numbers, symbols."
+          },
+          {
+            "id": "parse",
+            "label": "Parser",
+            "tip": "Checks the grammar and builds a syntax tree."
+          },
+          {
+            "id": "opt",
+            "label": "Optimizer",
+            "tip": "Removes useless work and simplifies the tree."
+          },
+          {
+            "id": "gen",
+            "label": "Code gen",
+            "tip": "Emits machine instructions for the target CPU."
+          }
+        ]
+      }
+    },
+    {
+      "short": "Layers",
+      "slides": "Demo · stack",
+      "title": "A computer is a stack of layers",
+      "concept": "Each layer hides the details of the one below. An app never talks to transistors: it asks the runtime, which asks the OS, which drives the hardware.",
+      "formula": {
+        "label": "IDEA",
+        "eq": "each layer = a simpler interface over the one below",
+        "note": "This is called abstraction."
+      },
+      "vocab": [
+        [
+          "Hardware",
+          "CPU, memory, disks."
+        ],
+        [
+          "OS",
+          "shares the hardware between programs."
+        ],
+        [
+          "Runtime",
+          "language machinery: memory, threads."
+        ],
+        [
+          "App",
+          "the program the user sees."
+        ]
+      ],
+      "quiz": {
+        "q": "A game wants to read a file. Who actually talks to the disk?",
+        "opts": [
+          "the game",
+          "the operating system",
+          "the runtime"
+        ],
+        "a": 1
+      },
+      "why": "The game calls a library function, the runtime turns it into a system call, and only the operating system drives the disk controller.",
+      "fig": "Fig. 3 — Four layers, bottom to top. Touch each floor.",
+      "scene": {
+        "type": "stack",
+        "levels": [
+          {
+            "id": "hw",
+            "title": "HARDWARE",
+            "sub": "CPU · memory",
+            "tip": "The physical machine: it only understands instructions and addresses."
+          },
+          {
+            "id": "os",
+            "title": "OS",
+            "sub": "kernel",
+            "tip": "Shares CPU time, memory and devices between programs."
+          },
+          {
+            "id": "rt",
+            "title": "RUNTIME",
+            "sub": "libraries",
+            "tip": "Memory allocation, threads, file APIs for one language."
+          },
+          {
+            "id": "app",
+            "title": "APP",
+            "sub": "what you use",
+            "tip": "Your program: it only sees the layer just below."
+          }
+        ]
+      }
+    },
+    {
+      "short": "Queues",
+      "slides": "Demo · model (tank)",
+      "title": "Queues fill up suddenly",
+      "concept": "A server handles μ = 10 requests per second. While requests arrive slower than that the queue stays short; near the limit it fills up fast and overflows.",
+      "formula": {
+        "label": "LOAD",
+        "eq": "ρ = λ / μ",
+        "note": "Standard queueing result (M/M/1): mean wait = 1/(μ − λ), not from a slide."
+      },
+      "vocab": [
+        [
+          "λ",
+          "arrival rate, requests per second."
+        ],
+        [
+          "μ",
+          "service rate of the server."
+        ],
+        [
+          "ρ",
+          "utilisation: share of time the server is busy."
+        ]
+      ],
+      "quiz": {
+        "q": "Going from 80 % to 95 % load, what happens to the waiting time?",
+        "opts": [
+          "it grows a little",
+          "it is multiplied by 4",
+          "it stays the same"
+        ],
+        "a": 1
+      },
+      "why": "Wait = 1/(μ − λ): at λ = 8 it is 0.5 s, at λ = 9.5 it is 2 s, four times longer. Push the slider toward 10 and watch the tank.",
+      "fig": "Fig. 4 — A tank as a queue. Move the arrival rate slider.",
+      "scene": {
+        "type": "model",
+        "visual": "tank",
+        "param": {
+          "id": "l",
+          "label": "arrivals λ",
+          "min": 1,
+          "max": 12,
+          "step": 0.1,
+          "value": 5,
+          "unit": "/s"
+        },
+        "outputs": [
+          {
+            "label": "load",
+            "expr": "l/10",
+            "digits": 2,
+            "warnAbove": 0.9
+          },
+          {
+            "label": "wait s",
+            "expr": "l < 10 ? 1/(10-l) : 99",
+            "digits": 2
+          }
+        ],
+        "gauge": {
+          "label": "Queue",
+          "expr": "min(1, 1/(10-min(l, 9.9))/2)",
+          "max": 1
+        },
+        "threshold": {
+          "value": 10,
+          "label": "overload",
+          "tip": "When λ ≥ μ the queue grows without limit."
+        },
+        "messages": [
+          {
+            "when": "l >= 10",
+            "text": "Overload: requests arrive faster than they are served."
+          },
+          {
+            "when": "l >= 9",
+            "text": "Almost full: tiny changes in load make huge waits."
+          },
+          {
+            "when": "true",
+            "text": "Plenty of room: requests are served almost at once."
+          }
+        ]
+      }
+    },
+    {
+      "short": "Ohm's law",
+      "slides": "Demo · model (dial)",
+      "title": "Current through a resistor",
+      "concept": "Push a voltage across a resistor and a current flows. Double the voltage and the current doubles; double the resistance and it halves.",
+      "formula": {
+        "label": "OHM",
+        "eq": "I = V / R",
+        "note": "Standard physics, added for the demo."
+      },
+      "vocab": [
+        [
+          "Voltage V",
+          "electrical push, in volts."
+        ],
+        [
+          "Resistance R",
+          "how hard the part resists, in ohms."
+        ],
+        [
+          "Current I",
+          "flow of charge, in amperes."
+        ],
+        [
+          "Fuse",
+          "breaks the circuit when I is too large."
+        ]
+      ],
+      "quiz": {
+        "q": "With R = 10 Ω, which voltage gives a current of 1 A?",
+        "opts": [
+          "1 V",
+          "10 V",
+          "100 V"
+        ],
+        "a": 1
+      },
+      "why": "I = V/R so V = I·R = 1 × 10 = 10 V. With the 20 Ω resistor you need 20 V for the same current: try the toggle.",
+      "fig": "Fig. 5 — A current dial. Slide the voltage, switch the resistor.",
+      "scene": {
+        "type": "model",
+        "visual": "dial",
+        "param": {
+          "id": "v",
+          "label": "voltage",
+          "min": 0,
+          "max": 24,
+          "step": 0.5,
+          "value": 6,
+          "unit": "V"
+        },
+        "toggle": {
+          "id": "r",
+          "label": "20 Ω resistor",
+          "off": 10,
+          "on": 20
+        },
+        "outputs": [
+          {
+            "label": "I (A)",
+            "expr": "v/r",
+            "digits": 2,
+            "warnAbove": 2
+          }
+        ],
+        "gauge": {
+          "label": "Current",
+          "expr": "v/r",
+          "max": 2.4
+        },
+        "threshold": {
+          "value": 20,
+          "label": "fuse 2 A",
+          "when": "r==10",
+          "tip": "With 10 Ω, 20 V means 2 A: the fuse blows."
+        },
+        "messages": [
+          {
+            "when": "v/r >= 2",
+            "text": "Fuse blown: more than 2 A."
+          },
+          {
+            "when": "true",
+            "text": "Current = voltage ÷ resistance."
+          }
+        ]
+      }
+    },
+    {
+      "short": "Time sharing",
+      "slides": "Demo · scheduler",
+      "title": "One core, four programs",
+      "concept": "A single core runs one program at a time. The scheduler gives each a short slice in turn; with small slices everything seems to run at once.",
+      "formula": {
+        "label": "ROUND ROBIN",
+        "eq": "each task runs for one quantum, then goes to the back of the queue",
+        "note": "Real schedulers also use priorities."
+      },
+      "vocab": [
+        [
+          "Quantum",
+          "length of one time slice."
+        ],
+        [
+          "Context switch",
+          "saving one task, loading the next."
+        ],
+        [
+          "Hyperthreading",
+          "two hardware threads share one core."
+        ]
+      ],
+      "quiz": {
+        "q": "What does a smaller quantum change for the user?",
+        "opts": [
+          "programs feel more simultaneous",
+          "programs finish faster",
+          "nothing"
+        ],
+        "a": 0
+      },
+      "why": "Each program waits less between turns, so all of them respond smoothly; total work is the same and switching even costs a little time.",
+      "fig": "Fig. 6 — Touch the core to start, then change the quantum.",
+      "scene": {
+        "type": "scheduler",
+        "tasks": [
+          "Mail",
+          "Music",
+          "Editor",
+          "Backup"
+        ],
+        "quantum": {
+          "label": "Quantum",
+          "min": 0.05,
+          "max": 1.5,
+          "value": 0.8
+        },
+        "ht": {
+          "label": "Hyperthreading"
+        }
+      }
+    },
+    {
+      "short": "CPU vs GPU",
+      "slides": "Demo · race",
+      "title": "CPU against GPU",
+      "concept": "A GPU has thousands of simple cores. On work made of many identical small tasks it leaves the CPU far behind; on a single long chain of steps it cannot help.",
+      "formula": {
+        "label": "RULE",
+        "eq": "many independent tasks → GPU · one long chain → CPU",
+        "note": "Times are illustrative orders of magnitude for this demo."
+      },
+      "vocab": [
+        [
+          "CPU",
+          "few powerful cores, good at branching code."
+        ],
+        [
+          "GPU",
+          "thousands of simple cores in lock-step."
+        ],
+        [
+          "Kernel",
+          "small function run by every GPU core."
+        ]
+      ],
+      "quiz": {
+        "q": "Which job gains least from a GPU?",
+        "opts": [
+          "resizing a million photos",
+          "a step-by-step physics loop",
+          "matrix multiplication"
+        ],
+        "a": 1
+      },
+      "why": "Each step of the loop needs the previous one, so the work cannot be spread. Photos and matrix cells are independent and run side by side.",
+      "fig": "Fig. 7 — CPU (violet) vs GPU (blue). Touch each job to start the clock.",
+      "scene": {
+        "type": "race",
+        "a": {
+          "label": "CPU"
+        },
+        "b": {
+          "label": "GPU"
+        },
+        "unit": "s",
+        "items": [
+          {
+            "id": "matrix",
+            "label": "Matrix",
+            "short": "60 s → 2 s",
+            "tip": "Multiplying two large matrices.",
+            "a": 60,
+            "b": 2,
+            "aText": "60 s",
+            "bText": "2 s"
+          },
+          {
+            "id": "photos",
+            "label": "Photos",
+            "short": "40 s → 3 s",
+            "tip": "Resizing a million photos.",
+            "a": 40,
+            "b": 3,
+            "aText": "40 s",
+            "bText": "3 s"
+          },
+          {
+            "id": "loop",
+            "label": "Loop",
+            "short": "10 s → 12 s",
+            "tip": "A step-by-step simulation: each step needs the last.",
+            "a": 10,
+            "b": 12,
+            "aText": "10 s",
+            "bText": "12 s"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Memory per year",
+      "slides": "Demo · bars",
+      "title": "Typical laptop memory",
+      "concept": "Laptop memory has grown steadily. On a linear scale the last bars dominate; switch to log to see the growth rate.",
+      "formula": {
+        "label": "TREND",
+        "eq": "RAM ≈ × 2 every 3–4 years",
+        "note": "Rounded typical values, for the demo."
+      },
+      "vocab": [
+        [
+          "RAM",
+          "fast working memory, emptied at power-off."
+        ],
+        [
+          "GB",
+          "gigabyte, a billion bytes."
+        ],
+        [
+          "Linear scale",
+          "equal steps add the same amount."
+        ]
+      ],
+      "quiz": {
+        "q": "On a linear scale, how does the 2005 bar look next to 2025?",
+        "opts": [
+          "almost flat",
+          "half as tall",
+          "the same"
+        ],
+        "a": 0
+      },
+      "why": "0.5 GB is 1/64 of 32 GB, so its bar is barely visible. A log scale gives every doubling the same height.",
+      "fig": "Fig. 8 — Press grow, then switch the scale.",
+      "scene": {
+        "type": "bars",
+        "log": false,
+        "unitLabel": "GB",
+        "items": [
+          {
+            "label": "2005",
+            "x": 2005,
+            "value": 0.5,
+            "valueText": "0.5 GB"
+          },
+          {
+            "label": "2010",
+            "x": 2010,
+            "value": 2,
+            "valueText": "2 GB"
+          },
+          {
+            "label": "2015",
+            "x": 2015,
+            "value": 8,
+            "valueText": "8 GB"
+          },
+          {
+            "label": "2020",
+            "x": 2020,
+            "value": 16,
+            "valueText": "16 GB"
+          },
+          {
+            "label": "2025",
+            "x": 2025,
+            "value": 32,
+            "valueText": "32 GB"
+          }
+        ]
+      }
+    },
+    {
+      "short": "Shapes",
+      "slides": "Demo · showcase",
+      "title": "Simple shapes, one per idea",
+      "concept": "The showcase block can also show plain shapes when an idea has no obvious object. Here a globe cycles through steps and two shapes spin when touched.",
+      "formula": {
+        "label": "STEPS",
+        "eq": "touch the globe: grid 28 → 14 → 7 km",
+        "note": "Each step is shown in the readout card."
+      },
+      "vocab": [
+        [
+          "Mesh",
+          "grid of points on which a model is computed."
+        ],
+        [
+          "Step",
+          "one state of an item; touch to cycle."
+        ],
+        [
+          "Shape",
+          "cube, pyramid, sphere or cylinder."
+        ]
+      ],
+      "quiz": {
+        "q": "Halving the grid spacing on a map multiplies the number of points by…",
+        "opts": [
+          "2",
+          "4",
+          "8"
+        ],
+        "a": 1
+      },
+      "why": "Both directions get twice as many points: 2 × 2 = 4. Touch the globe twice and watch the grid refine.",
+      "fig": "Fig. 9 — A globe with steps, a pyramid and a cylinder. Touch all three.",
+      "scene": {
+        "type": "showcase",
+        "items": [
+          {
+            "id": "globe",
+            "model": "globe",
+            "label": "Weather",
+            "sub": "touch to refine",
+            "tip": "A finer mesh gives a more precise forecast.",
+            "steps": [
+              {
+                "label": "28 km",
+                "value": "points ×1"
+              },
+              {
+                "label": "14 km",
+                "value": "points ×4"
+              },
+              {
+                "label": "7 km",
+                "value": "points ×16"
+              }
+            ]
+          },
+          {
+            "id": "pyr",
+            "model": "pyramid",
+            "label": "Pyramid",
+            "tip": "A plain shape."
+          },
+          {
+            "id": "cyl",
+            "model": "cylinder",
+            "label": "Cylinder",
+            "tip": "A plain round shape with an outline."
+          }
+        ]
+      }
+    },
+    {
+      "short": "Clusters",
+      "slides": "Demo · network",
+      "title": "Many machines, one job",
+      "concept": "A cluster links ordinary computers through a fast switch. The job is split, pieces travel over the network, and results come back to be combined.",
+      "formula": {
+        "label": "COST",
+        "eq": "time = compute / n + communication",
+        "note": "Simplified model for the demo: more nodes also means more messages."
+      },
+      "vocab": [
+        [
+          "Node",
+          "one computer of the cluster."
+        ],
+        [
+          "Switch",
+          "box that forwards packets between nodes."
+        ],
+        [
+          "Latency",
+          "time for one message to arrive."
+        ]
+      ],
+      "quiz": {
+        "q": "Why does adding nodes eventually stop helping?",
+        "opts": [
+          "the switch gets hot",
+          "communication time grows",
+          "nodes slow each other down on purpose"
+        ],
+        "a": 1
+      },
+      "why": "Each extra node shrinks compute/n but adds messages. Past some point the network time dominates and the job gets no faster.",
+      "fig": "Fig. 10 — Five nodes around a switch. Touch any machine to send packets.",
+      "scene": {
+        "type": "network",
+        "hub": {
+          "label": "Switch",
+          "tip": "Forwards packets between the nodes."
+        },
+        "nodes": [
+          {
+            "label": "Node 1",
+            "tip": "One computer: CPU, memory and a network card."
+          },
+          {
+            "label": "Node 2",
+            "tip": "One computer: CPU, memory and a network card."
+          },
+          {
+            "label": "Node 3",
+            "tip": "One computer: CPU, memory and a network card."
+          },
+          {
+            "label": "Node 4",
+            "tip": "One computer: CPU, memory and a network card."
+          },
+          {
+            "label": "Node 5",
+            "tip": "One computer: CPU, memory and a network card."
+          }
+        ]
+      }
+    },
+    {
+      "short": "Pendulum",
+      "slides": "Demo · custom scene",
+      "title": "A custom scene: the pendulum",
+      "concept": "When no block fits, an agent can write a scene module with the kit API. This pendulum swings with the period given by its length.",
+      "formula": {
+        "label": "PERIOD",
+        "eq": "T = 2π √(L / g)",
+        "note": "Small-angle approximation, standard physics added for the demo."
+      },
+      "vocab": [
+        [
+          "Period",
+          "time for one full swing."
+        ],
+        [
+          "Length L",
+          "from the pivot to the weight."
+        ],
+        [
+          "g",
+          "gravity, 9.81 m/s²."
+        ]
+      ],
+      "quiz": {
+        "q": "Make the string 4 times longer. The period…",
+        "opts": [
+          "doubles",
+          "is 4 times longer",
+          "does not change"
+        ],
+        "a": 0
+      },
+      "why": "T grows with the square root of L: √4 = 2, so the swing takes twice as long. The mass does not appear in the formula at all.",
+      "fig": "Fig. 11 — Touch the weight to start it, then change the length.",
+      "scene": {
+        "type": "custom",
+        "module": "scenes/pendulum.js",
+        "targets": [
+          "bob",
+          "length"
+        ]
+      }
+    }
+  ]
+}

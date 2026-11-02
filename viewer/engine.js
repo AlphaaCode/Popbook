@@ -189,6 +189,7 @@ export async function startViewer({ book: input, base = '.', allowCustom = true 
     } finally { busy = false; }
   }
   $('#prev').onclick = () => go(cur - 1); $('#next').onclick = () => go(cur + 1);
+  if (book.dir === 'rtl') { $('#bar').dir = 'rtl'; $('#prev').textContent = '→'; $('#next').textContent = '←'; }
   addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.key === 'ArrowRight') go(cur + (book.dir === 'rtl' ? -1 : 1)); if (e.key === 'ArrowLeft') go(cur + (book.dir === 'rtl' ? 1 : -1)); });
   addEventListener('hashchange', () => { const m = /^#p(\d+)$/.exec(location.hash); const n = m ? +m[1] : 0; if (n !== cur) go(n); });
   const demoBtn = $('#demo'); demoBtn.textContent = '▶ ' + ui.demo;

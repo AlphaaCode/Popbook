@@ -232,7 +232,7 @@ function bars(sc, ctx) {
     const die = ink(new THREE.BoxGeometry(bw * 0.65, 0.004, bw * 0.65), 0xd9cfb8); die.position.y = 0.008; cap.add(die);
     col.userData = { target: 'bar', tip: tipOf(`${it.label} · ${it.x}`, `${it.valueText} ${sc.unitLabel || ''}${it.tip ? ' — ' + it.tip : ''}`), click: () => { ctx.touch('bar'); towers.forEach(t => glow(t.col, 0)); glow(col, 0.5, i === n - 1 ? 0x8f6bff : 0x2fa8ff); } };
     cap.userData = col.userData;
-    const lab = flatLabel(Math.min(0.14, 0.82 / n), 0.085, [[String(it.label).toUpperCase(), 23, 'mono', '#1f1d1a', 600], [String(it.x), 30, 'serif'], [it.valueText, 21, 'mono', '#4a443b']]); lab.position.set(xs[i], PY + 0.002, 0.06); G.add(lab);
+    const lab = flatLabel(Math.min(0.14, 0.82 / n), 0.085, [[String(it.label).toUpperCase(), 23, 'mono', '#1f1d1a', 600], ...(String(it.label) === String(it.x) ? [] : [[String(it.x), 30, 'serif']]), [it.valueText, 21, 'mono', '#4a443b']]); lab.position.set(xs[i], PY + 0.002, 0.06); G.add(lab);
     return { g, col, cap, v: it.value };
   });
   const dashMat = new THREE.LineDashedMaterial({ color: 0xb8342a, dashSize: 0.015, gapSize: 0.01 }); let curve = null;
@@ -284,10 +284,10 @@ function model(sc, ctx) {
     const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pp, 3)); pm = new THREE.PointsMaterial({ color: 0xff7a2a, size: 0.014, transparent: true, opacity: 0, depthWrite: false });
     pts = new THREE.Points(pg, pm); pts.raycast = () => {}; main.add(pts);
   } else if (sc.visual === 'tank') {
-    const j = glassCyl(0.1, 0.3); main.add(j); tankLiq = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 1, 40).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ color: 0x19a6ff, transparent: true, opacity: .8 })); tankLiq.position.y = 0.003; j.add(tankLiq);
-    for (let k = 1; k < 6; k++) j.add(polyline([V(0.1, k * 0.05, 0), V(0.125, k * 0.05, 0)])); const h = hitBox(0.22, 0.3, 0.22); h.userData = { target: 'param', tip: tipOf(sc.gauge ? sc.gauge.label : P.label, ctx.ui.useSlider) }; main.add(h);
+    const j = glassCyl(0.08, 0.22); main.add(j); tankLiq = new THREE.Mesh(new THREE.CylinderGeometry(0.076, 0.076, 1, 40).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ color: 0x19a6ff, transparent: true, opacity: .8 })); tankLiq.position.y = 0.003; j.add(tankLiq);
+    for (let k = 1; k < 6; k++) j.add(polyline([V(0.08, k * 0.037, 0), V(0.1, k * 0.037, 0)])); const h = hitBox(0.18, 0.22, 0.18); h.userData = { target: 'param', tip: tipOf(sc.gauge ? sc.gauge.label : P.label, ctx.ui.useSlider) }; main.add(h);
   } else {
-    const face = ink(new THREE.CylinderGeometry(0.13, 0.13, 0.025, 48, 1, false, -Math.PI / 2, Math.PI), 0xf3eee2, { thresh: 50 }); face.position.y = 0.0125; main.add(face);
+    const face = ink(new THREE.CylinderGeometry(0.13, 0.13, 0.025, 48, 1, false, Math.PI / 2, Math.PI), 0xf3eee2, { thresh: 50 }); face.position.y = 0.0125; main.add(face);
     for (let k = 0; k <= 10; k++) { const a = Math.PI * (k / 10); main.add(polyline([V(Math.cos(a) * 0.1, 0.026, -Math.sin(a) * 0.1), V(Math.cos(a) * 0.125, 0.026, -Math.sin(a) * 0.125)])); }
     needle = ink(new THREE.BoxGeometry(0.11, 0.008, 0.008).translate(0.055, 0, 0), 0xb8342a); needle.position.y = 0.03; main.add(needle);
     face.userData = { target: 'param', tip: tipOf(sc.gauge ? sc.gauge.label : P.label, ctx.ui.useSlider) };
@@ -311,9 +311,10 @@ function model(sc, ctx) {
     const X = v => cw * (fx(v) - 0.05) / 0.9;
     if (sc.threshold) { const x = X(sc.threshold.value); g.fillStyle = 'rgba(184,52,42,.13)'; g.fillRect(x, 0, X(P.max) + 30 - x, ch); fitTxt(g, sc.threshold.label, x + 10, ch * 0.15, 22, 'mono', 600, X(P.max) + 20 - x, '#b8342a', 'left'); }
     g.strokeStyle = '#1f1d1a'; g.lineWidth = 3; g.beginPath(); g.moveTo(X(P.min), ch * 0.4); g.lineTo(X(P.max), ch * 0.4); g.stroke();
-    for (let v = Math.ceil(P.min / ticks - 1e-9) * ticks; v <= P.max + 1e-9; v += ticks) { const x = X(v); g.beginPath(); g.moveTo(x, ch * 0.4); g.lineTo(x, ch * 0.58); g.stroke(); txt(g, ctx.fmt(v, 2), x, ch * 0.8, F(23, 'mono', 600), '#1f1d1a', 'center'); }
+    let td = 0; while (td < 6 && Math.abs(ticks * 10 ** td - Math.round(ticks * 10 ** td)) > 1e-6) td++; // decimals of the tick step
+    for (let v = Math.ceil(P.min / ticks - 1e-9) * ticks + 0; v <= P.max + 1e-9; v += ticks) { const x = X(v); g.beginPath(); g.moveTo(x, ch * 0.4); g.lineTo(x, ch * 0.58); g.stroke(); txt(g, ctx.fmt(Math.abs(v) < 1e-9 ? 0 : v, td), x, ch * 0.8, F(23, 'mono', 600), '#1f1d1a', 'center'); }
     if (P.unit) txt(g, P.unit, cw - 8, ch * 0.8, F(21, 'mono', 400), '#4a443b', 'right');
-  }, { flat: true, noHit: true });
+  }, { flat: true, noHit: true, ltr: true });
   ruler.position.set(0.5, PY + 0.002, RZ); G.add(ruler);
   const marker = ink(new THREE.ConeGeometry(0.016, 0.04, 4), INK); marker.rotation.x = Math.PI; G.add(marker);
   // threshold wall
@@ -338,7 +339,7 @@ function model(sc, ctx) {
     update(dt, t) { const gv = safe(gaugeF), heat = clamp(gv / gaugeRef, 0, 1.3), hot = thrOn() || outs.some(o => o.warnAbove !== undefined && safe(o.f) > o.warnAbove);
       if (typeof dies === 'function') { const ds = dies(); if (ds !== pDies) { (pDies || []).forEach(d => d.visible = false); ds.forEach(d => d.visible = true); pDies = ds; } ds.forEach(d => glow(d, clamp(heat, 0, 1) * 0.85, hot ? 0xff3b22 : 0xff9a3c)); }
       if (merc) merc.scale.y = 0.03 + 0.18 * clamp(heat, 0, 1);
-      if (tankLiq) { tankLiq.scale.y = Math.max(0.001, 0.29 * clamp(heat, 0, 1)); tankLiq.material.color.setHex(hot ? 0xe0442f : 0x19a6ff); }
+      if (tankLiq) { tankLiq.scale.y = Math.max(0.001, 0.214 * clamp(heat, 0, 1)); tankLiq.material.color.setHex(hot ? 0xe0442f : 0x19a6ff); }
       if (needle) needle.rotation.y = Math.PI - Math.PI * clamp(heat, 0, 1);
       marker.position.set(fx(scope[P.id]), PY + 0.04 + Math.sin(t * 4) * 0.005, RZ - 0.006);
       const wh = thrOn(); bricks.forEach((b, i) => { glow(b, wh ? 0.75 : 0, 0xe0442f); b.position.x = wh ? Math.sin(t * 40 + i) * 0.002 : 0; });
@@ -359,23 +360,23 @@ function plot(sc, ctx) {
   const G = new THREE.Group(), pops = [];
   const f = compile(sc.expr), P = sc.param; const scope = { x: 0, [P.id]: P.value };
   const xl = !!sc.x.log && sc.x.min > 0;
-  const PWd = 0.82, PHt = 0.42, tilt = -0.28;
-  const board = new THREE.Group(); at(board, 0.5, PY, -0.26); board.rotation.x = tilt; G.add(board); pops.push(board);
+  const PWd = 0.84, PHt = 0.36, tilt = -0.38;
+  const board = new THREE.Group(); at(board, 0.5, PY, -0.06); board.rotation.x = tilt; G.add(board); pops.push(board);
   const easel = ink(new THREE.BoxGeometry(PWd + 0.03, PHt + 0.03, 0.012).translate(0, (PHt + 0.03) / 2, -0.008), 0xe9e2d2); board.add(easel);
   const u2x = u => xl ? Math.pow(10, lerp(Math.log10(sc.x.min), Math.log10(sc.x.max), u)) : lerp(sc.x.min, sc.x.max, u);
   const x2u = x => xl ? (Math.log10(x) - Math.log10(sc.x.min)) / (Math.log10(sc.x.max) - Math.log10(sc.x.min)) : (x - sc.x.min) / (sc.x.max - sc.x.min);
-  const PAD = { l: 0.09, r: 0.03, b: 0.07, t: 0.04 }; const iw = PWd - PAD.l - PAD.r, ih = PHt - PAD.b - PAD.t;
+  const PAD = { l: 0.1, r: 0.03, b: 0.075, t: 0.04 }; const iw = PWd - PAD.l - PAD.r, ih = PHt - PAD.b - PAD.t;
   const toLocal = (u, yv) => V(-PWd / 2 + PAD.l + u * iw, PAD.b + clamp((yv - sc.y.min) / (sc.y.max - sc.y.min), -0.02, 1.02) * ih, 0.004);
   const face = card(PWd, PHt, (g, cw, ch) => {
     g.fillStyle = '#fbf8f0'; g.fillRect(0, 0, cw, ch); g.strokeStyle = '#1f1d1a'; g.lineWidth = 4; g.strokeRect(2, 2, cw - 4, ch - 4);
     const X = u => (PAD.l + u * iw) / PWd * cw, Y = v => ch - (PAD.b + v * ih) / PHt * ch;
     g.strokeStyle = 'rgba(31,29,26,.15)'; g.lineWidth = 1.5;
-    for (let k = 0; k <= 5; k++) { g.beginPath(); g.moveTo(X(0), Y(k / 5)); g.lineTo(X(1), Y(k / 5)); g.stroke(); txt(g, ctx.fmt(lerp(sc.y.min, sc.y.max, k / 5), 2), X(0) - 10, Y(k / 5), F(20, 'mono'), '#4a443b', 'right'); }
-    for (let k = 0; k <= 6; k++) { g.beginPath(); g.moveTo(X(k / 6), Y(0)); g.lineTo(X(k / 6), Y(1)); g.stroke(); txt(g, ctx.fmt(u2x(k / 6), 1), X(k / 6), Y(0) + 22, F(20, 'mono'), '#4a443b', 'center'); }
+    for (let k = 0; k <= 5; k++) { g.beginPath(); g.moveTo(X(0), Y(k / 5)); g.lineTo(X(1), Y(k / 5)); g.stroke(); txt(g, ctx.fmt(lerp(sc.y.min, sc.y.max, k / 5), 2), X(0) - 10, Y(k / 5), F(24, 'mono'), '#4a443b', 'right'); }
+    for (let k = 0; k <= 6; k++) { g.beginPath(); g.moveTo(X(k / 6), Y(0)); g.lineTo(X(k / 6), Y(1)); g.stroke(); txt(g, ctx.fmt(u2x(k / 6), 1), X(k / 6), Y(0) + 26, F(24, 'mono'), '#4a443b', 'center'); }
     g.strokeStyle = '#1f1d1a'; g.lineWidth = 3; g.beginPath(); g.moveTo(X(0), Y(1)); g.lineTo(X(0), Y(0)); g.lineTo(X(1), Y(0)); g.stroke();
-    txt(g, sc.x.label || 'x', X(1), Y(0) - 18, F(22, 'mono', 600), '#1f1d1a', 'right'); txt(g, sc.y.label || 'y', X(0) + 12, Y(1) + 6, F(22, 'mono', 600), '#1f1d1a', 'left');
-    (sc.marks || []).forEach(m => { const u = x2u(m.x); if (u < 0 || u > 1) return; g.setLineDash([8, 6]); g.strokeStyle = '#b8342a'; g.beginPath(); g.moveTo(X(u), Y(0)); g.lineTo(X(u), Y(1)); g.stroke(); g.setLineDash([]); txt(g, m.label || '', X(u) + 6, Y(0.94), F(20, 'mono', 600), '#b8342a', 'left'); });
-  }, { ppu: 1700 });
+    txt(g, sc.x.label || 'x', X(1), Y(0) - 20, F(26, 'mono', 600), '#1f1d1a', 'right'); txt(g, sc.y.label || 'y', X(0) + 14, Y(1) + 10, F(26, 'mono', 600), '#1f1d1a', 'left');
+    (sc.marks || []).forEach(m => { const u = x2u(m.x); if (u < 0 || u > 1) return; g.setLineDash([8, 6]); g.strokeStyle = '#b8342a'; g.beginPath(); g.moveTo(X(u), Y(0)); g.lineTo(X(u), Y(1)); g.stroke(); g.setLineDash([]); txt(g, m.label || '', X(u) + 8, Y(0.92), F(24, 'mono', 600), '#b8342a', 'left'); });
+  }, { ppu: 1700, ltr: true });
   face.position.set(0, PHt / 2, 0.0005); board.add(face); face.userData = { target: 'curve', tip: tipOf(sc.y.label || 'y', ctx.ui.touchCurve), click: e => pick(e) };
   let tube = null;
   function build() { const pts = []; for (let k = 0; k <= 120; k++) { const u = k / 120; scope.x = u2x(u); let yv; try { yv = f(scope); } catch { yv = NaN; } if (Number.isFinite(yv)) pts.push(toLocal(u, yv)); }
@@ -395,8 +396,8 @@ function plot(sc, ctx) {
   function setP(v) { scope[P.id] = v; build(); placeDot(); drawRo(); ctx.touch('param'); ctx.setControl('param', { value: v }); }
   return { G, pops, update() {},
     controls: [{ id: 'param', kind: 'range', label: P.label, min: P.min, max: P.max, step: P.step, value: P.value, fmt: v => ctx.fmt(v, 3), onInput: setP }],
-    demo: [{ focus: [0.5, PY + 0.2, -0.2], d: 1.0, act: async () => { const a = scope[P.id]; await tween(1.6, u => setP(lerp(a, P.max, u)), 'io'); await tween(1.6, u => setP(lerp(P.max, P.min, u)), 'io'); }, wait: 3600 },
-           { focus: [0.5, PY + 0.2, -0.2], d: 1.0, act: async () => { await tween(1.0, u => setP(lerp(P.min, P.value, u)), 'io'); pick(null); }, wait: 2000 }] };
+    demo: [{ focus: [0.5, PY + 0.15, -0.1], d: 1.0, act: async () => { const a = scope[P.id]; await tween(1.6, u => setP(lerp(a, P.max, u)), 'io'); await tween(1.6, u => setP(lerp(P.max, P.min, u)), 'io'); }, wait: 3600 },
+           { focus: [0.5, PY + 0.15, -0.1], d: 1.0, act: async () => { await tween(1.0, u => setP(lerp(P.min, P.value, u)), 'io'); pick(null); }, wait: 2000 }] };
 }
 
 /* ===================================================================== */
@@ -452,11 +453,11 @@ function levelsModel(levels, ctx, opt) {
 }
 function stack(sc, ctx) {
   const G = new THREE.Group(), pops = [];
-  const ro = readoutCard(0.82, 0.12, 0.4); G.add(ro);
+  const ro = readoutCard(0.82, 0.12, 0.36); G.add(ro);
   const drawRo = L => ro.redraw((g, cw, ch) => { boxed(g, cw, ch); if (!L) { txt(g, ctx.ui.levels, 24, 36, F(24, 'mono', 600)); wrapTxt(g, ctx.ui.touch, 24, 82, cw - 48, 30, F(26, 'news'), '#3d3830', 2); return; }
     fitTxt(g, String(L.title).toUpperCase() + (L.sub ? ' · ' + L.sub : ''), 24, 34, 26, 'mono', 600, cw - 48, '#1f1d1a', 'left'); wrapTxt(g, L.tip || '', 24, 80, cw - 48, 30, F(26, 'news'), '#3d3830', 2); });
   drawRo(null);
-  const M = levelsModel(sc.levels, ctx, { x: 0.5, w: 0.62, zFront: 0.12, zBack: -0.42, dy: 0.085, onClick: (L, s) => { Object.values(M.slabs).forEach(x => glow(x, 0)); glow(s, 0.35, 0xffd27a); drawRo(L); ctx.touch(L.id); } });
+  const M = levelsModel(sc.levels, ctx, { x: 0.5, w: 0.6, zFront: 0.1, zBack: -0.26, dy: 0.06, onClick: (L, s) => { Object.values(M.slabs).forEach(x => glow(x, 0)); glow(s, 0.35, 0xffd27a); drawRo(L); ctx.touch(L.id); } });
   G.add(M.grp); pops.push(M.grp);
   return { G, pops, update() {}, demo: sc.levels.map(L => ({ focus: [0.5, PY + 0.1, M.slabs[L.id].position.z], d: 0.8, act: () => M.slabs[L.id].userData.click(), wait: 1800 })) };
 }
@@ -478,7 +479,7 @@ function scheduler(sc, ctx) {
   const tokens = sc.tasks.map((name, i) => { const m = ink(new THREE.CylinderGeometry(0.026, 0.026, 0.035, 28), 0xf4efe3, { thresh: 40 }); glow(m, 0.8, cols[i]);
     const a = Math.PI * 0.7 + i / Math.max(NT - 1, 1) * Math.PI * 0.6; const home = V(cx + Math.cos(a) * 0.2, PY + 0.0175, -0.18 - Math.sin(a) * 0.2 + 0.06); m.position.copy(home); G.add(m); pops.push(m);
     m.userData = { tip: tipOf(name, ctx.ui.waiting) }; return { m, home, i }; });
-  const gantt = card(0.86, 0.085 + NT * 0.045, () => {}, { flat: true, noHit: true }); gantt.position.set(0.5, PY + 0.002, 0.3 + NT * 0.01); G.add(gantt);
+  const gantt = card(0.86, 0.085 + NT * 0.045, () => {}, { flat: true, noHit: true, ltr: true }); gantt.position.set(0.5, PY + 0.002, 0.3 + NT * 0.01); G.add(gantt);
   let running = false, ht = false, q = sc.quantum.value, simT = 0, sliceEnd = 0, rr = 0, slots = [null, null]; const segs = [];
   drawCore();
   function setHT(v) { ht = v; ctx.setControl('ht', { on: v, label: (sc.ht ? sc.ht.label : 'HT') + (v ? ' ✓' : '') }); drawCore(); sliceEnd = simT; }

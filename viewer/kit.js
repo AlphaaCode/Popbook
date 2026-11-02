@@ -76,17 +76,19 @@ export function card(w, h, draw, o = {}) {
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
   if (o.flat) { mesh.rotation.x = -Math.PI / 2; mesh.renderOrder = 1; }
   if (o.noHit) mesh.raycast = () => {};
-  const redraw = fn => { g.clearRect(0, 0, cw, ch); g.direction = env.dir || 'ltr'; (fn || draw)(g, cw, ch); tex.needsUpdate = true; };
+  const redraw = fn => { g.clearRect(0, 0, cw, ch); g.ltr = !!o.ltr; g.direction = o.ltr ? 'ltr' : env.dir || 'ltr'; (fn || draw)(g, cw, ch); tex.needsUpdate = true; };
   redraw();
   mesh.redraw = redraw; // not in userData: blocks replace userData with {tip, click, target}
   return mesh;
 }
 export function boxed(g, cw, ch, fill = 'rgba(251,248,240,.96)') { g.fillStyle = fill; g.fillRect(3, 3, cw - 6, ch - 6); g.strokeStyle = '#1f1d1a'; g.lineWidth = 4; g.strokeRect(3, 3, cw - 6, ch - 6); }
-export function txt(g, s, x, y, font, col = '#1f1d1a', align = 'left') { g.font = font; g.fillStyle = col; g.textAlign = align; g.textBaseline = 'middle'; g.fillText(s, x, y); }
+// right-to-left books mirror card layouts (charts pass { ltr: true } to card() to opt out): x is measured from the right edge and left/right alignments swap
+const mirror = (g, x, align) => env.dir === 'rtl' && !g.ltr ? [g.canvas.width - x, align === 'left' ? 'right' : align === 'right' ? 'left' : align] : [x, align];
+export function txt(g, s, x, y, font, col = '#1f1d1a', align = 'left') { [x, align] = mirror(g, x, align); g.font = font; g.fillStyle = col; g.textAlign = align; g.textBaseline = 'middle'; g.fillText(s, x, y); }
 /** Draws text shrunk to fit maxW. */
 export function fitTxt(g, s, x, y, px, fam, w, maxW, col, align) { let size = px; g.font = F(size, fam, w); while (size > 10 && g.measureText(s).width > maxW) { size -= 1; g.font = F(size, fam, w); } txt(g, s, x, y, F(size, fam, w), col, align); }
 export function wrapTxt(g, s, x, y, maxW, lh, font, col = '#1f1d1a', maxLines = 9) {
-  g.font = font; g.fillStyle = col; g.textAlign = 'left'; g.textBaseline = 'middle';
+  let align; [x, align] = mirror(g, x, 'left'); g.font = font; g.fillStyle = col; g.textAlign = align; g.textBaseline = 'middle';
   const words = String(s).split(' '); let line = '', yy = y, n = 0;
   for (const w of words) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { if (++n >= maxLines) { g.fillText(line + '…', x, yy); return; } g.fillText(line, x, yy); line = w; yy += lh; } else line = t; }
   if (line) g.fillText(line, x, yy);
@@ -108,4 +110,5 @@ export function tween(dur, fn, e = 'io', delay = 0) { return new Promise(res => 
 export function stepTweens(dt) { for (let i = tweens.length - 1; i >= 0; i--) { const tw = tweens[i]; tw.t += dt; if (tw.t < 0) continue; const u = Math.min(tw.t / tw.dur, 1); tw.fn(tw.e(u)); if (u >= 1) { tweens.splice(i, 1); tw.res(); } } }
 export const wait = ms => new Promise(r => setTimeout(r, ms));
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, t) => a + (b - a) * t;
-export const fmtNum = (v, digits = 2, lang = 'en') => Number(v).toLocaleString(lang, { maximumFractionDigits: digits, minimumFractionDigits: Math.min(digits, Math.abs(v) < 10 ? digits : 0) });
+/** Locale number: at most `digits` decimals, trailing zeros dropped (2.50 → 2.5, 10.00 → 10). */
+export const fmtNum = (v, digits = 2, lang = 'en') => { const n = Number(v); return Number.isFinite(n) ? (Object.is(n, -0) ? 0 : n).toLocaleString(lang, { maximumFractionDigits: digits }) : '—'; };

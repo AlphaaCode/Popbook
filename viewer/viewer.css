@@ -4,6 +4,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#cfc8bb;font-family:"N
 #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
 #pageWrap{position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2}
 #leftPage{position:absolute;left:0;top:0;width:600px;height:860px;transform-origin:0 0;pointer-events:auto;padding:34px 40px 28px 44px;mix-blend-mode:multiply;transition:opacity .35s;will-change:transform}
+/* formulas are usually LTR math even inside an RTL page */
+#leftPage .eq,#leftPage .formula small{unicode-bidi:plaintext}
 #leftPage[dir=rtl]{font-family:"Noto Naskh Arabic","Newsreader",serif}
 #leftPage .inner{transform-origin:0 0}
 #leftPage[dir=rtl] .inner{transform-origin:100% 0}
