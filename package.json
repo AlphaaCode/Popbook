@@ -1,0 +1,23 @@
+{
+  "name": "popbook-studio",
+  "version": "0.1.0",
+  "description": "Turn any course PDF into an interactive 3D pop-up textbook with your own AI model or coding agent.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "check": "node tools/check.mjs",
+    "pages": "node tools/pdf2pages.mjs",
+    "export": "node tools/export.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "4.10.38",
+    "three": "0.160.0"
+  }
+}

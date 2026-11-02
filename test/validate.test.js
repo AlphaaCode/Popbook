@@ -1,0 +1,86 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { validateBook, sceneTargets } from '../lib/validate.js';
+import { extractJson } from '../lib/generate.js';
+
+const lesson = scene => ({
+  short: 'Short', title: 'A lesson', concept: 'Two sentences.', formula: { eq: 'E = mc<sup>2</sup>' },
+  vocab: [['a', 'b'], ['c', 'd'], ['e', 'f']], quiz: { q: 'Q?', opts: ['x', 'y', 'z'], a: 1 }, why: 'Because.', fig: 'Touch it.', scene,
+});
+const book = (...scenes) => ({ title: 'T', lang: 'en', spreads: scenes.map(lesson) });
+
+for (const dir of fs.readdirSync(new URL('../books', import.meta.url))) {
+  const file = new URL(`../books/${dir}/book.json`, import.meta.url);
+  if (!fs.existsSync(file)) continue;
+  test(`books/${dir}/book.json is valid`, () => {
+    const v = validateBook(fs.readFileSync(file, 'utf8'));
+    assert.deepEqual(v.errors, []);
+  });
+}
+
+test('rejects broken JSON and missing fields', () => {
+  assert.equal(validateBook('{oops').ok, false);
+  const v = validateBook({ title: 'T', spreads: [{ scene: { type: 'nope' } }] });
+  assert.equal(v.ok, false);
+  assert.ok(v.errors.some(e => e.includes('.title')));
+  assert.ok(v.errors.some(e => e.includes('scene.type')));
+});
+
+test('quiz answer index is checked', () => {
+  const b = book({ type: 'network', nodes: [{ label: 'a' }, { label: 'b' }] });
+  b.spreads[0].quiz.a = 3;
+  assert.ok(validateBook(b).errors.some(e => e.includes('quiz.a')));
+});
+
+test('normalizes ids, dir and defaults', () => {
+  const v = validateBook({ ...book({ type: 'showcase', items: [{ label: 'Météo', model: 'globe' }, { label: 'Météo', model: 'spaceship' }] }), lang: 'ar' });
+  assert.equal(v.ok, true);
+  assert.equal(v.book.dir, 'rtl');
+  const [a, b] = v.book.spreads[0].scene.items;
+  assert.equal(a.id, 'meteo');
+  assert.equal(b.id, 'meteo-2'); // duplicates made unique
+  assert.equal(b.model, 'cube'); // unknown model falls back
+  assert.ok(v.warnings.some(w => w.includes('spaceship')));
+  assert.deepEqual(v.book.spreads[0].targets, ['meteo', 'meteo-2']);
+});
+
+test('model expressions are compiled against param and toggle ids', () => {
+  const ok = book({ type: 'model', param: { id: 'f', min: 1, max: 5 }, toggle: { id: 'n' }, outputs: [{ label: 'p', expr: 'n*f^3' }], threshold: { value: 4, when: 'n==1' } });
+  const v = validateBook(ok);
+  assert.deepEqual(v.errors, []);
+  assert.deepEqual(v.book.spreads[0].targets, ['param', 'threshold', 'toggle']);
+  const bad = book({ type: 'model', param: { id: 'f', min: 1, max: 5 }, outputs: [{ label: 'p', expr: 'g*2' }] });
+  assert.ok(validateBook(bad).errors.some(e => e.includes('Unknown variable "g"')));
+});
+
+test('plot checks ranges and reserved x', () => {
+  const b = book({ type: 'plot', expr: 'x*p', x: { min: 0, max: 10, log: true }, y: { min: 5, max: 1 }, param: { id: 'x', min: 0, max: 1 } });
+  const errs = validateBook(b).errors.join('\n');
+  assert.match(errs, /reserved/);
+  assert.match(errs, /x\.min: must be > 0/);
+  assert.match(errs, /y: max must be greater/);
+});
+
+test('custom scenes only in agent mode', () => {
+  const b = book({ type: 'custom', module: 'scenes/x.js', targets: ['a'] });
+  assert.equal(validateBook(b, { allowCustom: true }).ok, true);
+  assert.equal(validateBook(b, { allowCustom: false }).ok, false);
+  b.spreads[0].scene.module = '../../etc/x.js';
+  assert.equal(validateBook(b).ok, false);
+});
+
+test('sceneTargets covers every block', () => {
+  assert.deepEqual(sceneTargets({ type: 'bars' }), ['play', 'bar', 'scale']);
+  assert.deepEqual(sceneTargets({ type: 'flow', steps: [{ id: 'a' }] }), ['play', 'a']);
+  assert.deepEqual(sceneTargets({ type: 'scheduler' }), ['core']);
+  assert.deepEqual(sceneTargets({ type: 'nope' }), []);
+});
+
+test('extractJson handles fences, chatter and braces in strings', () => {
+  assert.equal(extractJson('{"a":1}'), '{"a":1}');
+  assert.equal(extractJson('Sure!\n```json\n{"a":"}"}\n```\nHope it helps {x}'), '{"a":"}"}');
+  assert.equal(extractJson('Here: {"a":{"b":"\\"}"}} trailing } junk'), '{"a":{"b":"\\"}"}}');
+  assert.throws(() => extractJson('no json here'), /did not return JSON/);
+  assert.throws(() => extractJson('{"a": [1, 2'), /cut off/);
+});

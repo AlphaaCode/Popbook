@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PopBook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Noto+Naskh+Arabic:wght@400;600&display=swap" rel="stylesheet">
+<!--POPBOOK:STYLE-->
+<link rel="stylesheet" href="viewer.css">
+<!--/POPBOOK:STYLE-->
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="head"></div>
+<div id="pageWrap"><div id="leftPage" class="hidden"></div></div>
+<div id="tip"></div>
+<div id="bar">
+  <button id="prev" aria-label="Previous">←</button>
+  <div id="ttl"></div>
+  <div id="dots"></div>
+  <button id="demo" class="play">▶ Demo</button>
+  <button id="next" aria-label="Next">→</button>
+</div>
+<div id="loading">Opening the book…</div>
+<!--POPBOOK:IMPORTMAP-->
+<script type="importmap">{ "imports": { "three": "/vendor/three/three.module.js" } }</script>
+<!--/POPBOOK:IMPORTMAP-->
+<!--POPBOOK:BOOT-->
+<script type="module">
+import { startViewer } from './engine.js';
+const slug = new URLSearchParams(location.search).get('book') || 'calcul-parallele';
+const base = '/books/' + encodeURIComponent(slug);
+try {
+  const res = await fetch(base + '/book.json', { cache: 'no-store' });
+  if (!res.ok) throw new Error('Cannot load ' + base + '/book.json (' + res.status + ')');
+  await startViewer({ book: await res.text(), base });
+} catch (e) { console.error(e); const l = document.getElementById('loading'); if (l && !l.querySelector('.err')) l.innerHTML = '<div class="err"><b>Could not open the book</b><pre></pre></div>', l.querySelector('pre').textContent = e.message; }
+</script>
+<!--/POPBOOK:BOOT-->
+</body>
+</html>

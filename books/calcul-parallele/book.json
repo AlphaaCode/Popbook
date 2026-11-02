@@ -1,0 +1,181 @@
+{
+  "title": "Architecture et calcul parallèles",
+  "subtitle": "M2 BioInformatique · Faculté d’Informatique, USTHB · M. Mehdi · 2024-2025",
+  "lang": "fr",
+  "dir": "ltr",
+  "source": { "file": "coursCalculParallel2025.pdf", "pages": "1-10" },
+  "spreads": [
+    {
+      "kind": "cover",
+      "short": "Couverture & plan",
+      "slides": "Diapos 1–2",
+      "title": "Architecture et calcul parallèles",
+      "concept": "Formation M2 BioInformatique — Faculté d’Informatique, USTHB. M. Mehdi, 2024-2025. Pourquoi on a besoin du parallélisme, et comment le matériel y est arrivé.",
+      "plan": [
+        "Motivation et introduction aux architectures parallèles",
+        "Évolution des architectures, modèles de machines, classifications de Flynn et Raina",
+        "Architectures actuelles : multi-cœurs, multi-processeurs, many-cores, clusters, grilles",
+        "Mesure des performances : lois d’Amdahl et de Gustafson",
+        "Sources de parallélisme dans les programmes",
+        "Programmation parallèle : OpenMP, MPI, aperçu de CUDA",
+        "Parallélisation : découpage en tâches, compromis communication/calcul",
+        "Déploiement : équilibrage de charge, tolérance aux pannes"
+      ],
+      "fig": "Fig. 0 — Un cluster HPC : des nœuds de calcul reliés par un réseau. Touchez une machine.",
+      "scene": {
+        "type": "network",
+        "hub": { "label": "Commutateur", "tip": "Le réseau qui relie les nœuds du cluster." },
+        "nodes": [
+          { "label": "Nœud 1", "tip": "Une machine du cluster : processeurs + mémoire." },
+          { "label": "Nœud 2", "tip": "Une machine du cluster : processeurs + mémoire." },
+          { "label": "Nœud 3", "tip": "Une machine du cluster : processeurs + mémoire." },
+          { "label": "Nœud 4", "tip": "Une machine du cluster : processeurs + mémoire." }
+        ]
+      }
+    },
+    {
+      "short": "Besoins en calcul",
+      "slides": "Diapos 3–6",
+      "title": "Des calculs qui prennent des mois",
+      "concept": "Pétrole, imagerie médicale, météo : ces domaines résolvent des modèles mathématiques énormes. Sur un seul PC, un calcul prend des jours, des semaines, voire des mois.",
+      "formula": { "label": "PRINCIPE", "eq": "des mois sur 1 PC → paralléliser sur une plateforme HPC", "note": "Autres domaines : Big Data, bioinformatique, optimisation combinatoire, data mining." },
+      "vocab": [
+        ["HPC", "calcul haute performance : des machines qui calculent ensemble."],
+        ["Réservoir", "simuler l’exploitation d’un gisement selon plusieurs implantations de puits."],
+        ["Segmentation", "découper une image IRM en régions (organes, tumeurs)."],
+        ["Maillage", "grille de points où l’on résout les équations du climat."]
+      ],
+      "quiz": { "q": "La météo passe d’un maillage de 14 km à 7 km. Combien de points de grille en plus, en surface ?", "opts": ["× 2", "× 4", "× 8"], "a": 1 },
+      "why": "Diviser le pas par 2 double les points dans chaque direction : 2 × 2 = 4 fois plus de points en 2D (et davantage avec l’altitude et des pas de temps plus courts). Plus le maillage est fin, plus la prévision est précise — 7 km aujourd’hui, des heures sur un supercalculateur.",
+      "fig": "Fig. 1 — Trois domaines gourmands en calcul. Touchez les trois maquettes.",
+      "scene": {
+        "type": "showcase",
+        "items": [
+          { "id": "petrole", "model": "layers", "label": "Pétrole", "sub": "simulation de réservoir", "tip": "Simuler l’exploitation d’un gisement selon plusieurs scénarios d’implantation de puits ; imagerie sismique 3D." },
+          { "id": "medical", "model": "head", "label": "Imagerie médicale", "sub": "coupes & segmentation IRM", "tip": "Reconstruction 3D du corps humain, coupes à divers endroits, segmentation d’images IRM." },
+          { "id": "meteo", "model": "globe", "label": "Météorologie", "sub": "touchez pour affiner", "tip": "La zone est découpée en maillage ; plus il est fin, plus la prévision est précise.",
+            "steps": [ { "label": "28 km", "value": "points ×1" }, { "label": "14 km", "value": "points ×4" }, { "label": "7 km", "value": "points ×16" } ] }
+        ]
+      }
+    },
+    {
+      "short": "Bioinformatique",
+      "slides": "Diapo 7",
+      "title": "Bioinformatique : d’un an à trois jours",
+      "concept": "Étude de l’IN2P3 (CNRS, Lyon) : mêmes calculs lancés sur LBBE, le serveur du labo, puis sur CCIN2P3, le cluster HPC. Les années deviennent des jours.",
+      "formula": { "label": "ACCÉLÉRATION", "eq": "S = T<sub>serveur</sub> / T<sub>cluster</sub> ≈ 365 j / 3 j ≈ 120", "note": "Notion formalisée plus loin dans le cours (lois d’Amdahl et Gustafson)." },
+      "vocab": [
+        ["LBBE", "Laboratoire de Biologie et Biométrie Évolutives : son serveur."],
+        ["CCIN2P3", "le cluster de calcul de l’IN2P3."],
+        ["Hogenom", "banque de familles de gènes homologues."],
+        ["Isochores", "zones du génome plus ou moins riches en gènes."]
+      ],
+      "quiz": { "q": "La similarité de séquences pour Hogenom prend 1 an sur le serveur du labo. Et sur le cluster ?", "opts": ["≈ 3 mois", "≈ 1 mois", "≈ 3 jours"], "a": 2 },
+      "why": "Le cluster répartit les comparaisons de séquences sur de nombreux processeurs en parallèle : 1 an → 3 jours, environ 120 fois plus vite. Même ordre de grandeur pour les isochores : 3 ans → 10 jours.",
+      "fig": "Fig. 2 — LBBE (violet) contre CCIN2P3 (bleu). Touchez chaque calcul pour lancer le chrono.",
+      "scene": {
+        "type": "race",
+        "a": { "label": "LBBE" },
+        "b": { "label": "CCIN2P3" },
+        "unit": "days",
+        "items": [
+          { "id": "hog", "label": "Hogenom", "short": "1 an → 3 j", "tip": "Similarité de séquences pour construire la banque Hogenom.", "a": 365, "b": 3, "aText": "1 an", "bText": "3 jours" },
+          { "id": "pseudo", "label": "Pseudo-gènes", "short": ">1 an → <1 mois", "tip": "Recherche de « pseudo-gènes » dans le génome humain.", "a": 365, "b": 30, "aText": "plus d’un an", "bText": "moins d’1 mois" },
+          { "id": "iso", "label": "Isochores", "short": "3 ans → 10 j", "tip": "Prédiction d’« isochores » dans le génome humain.", "a": 1095, "b": 10, "aText": "3 ans", "bText": "10 jours" },
+          { "id": "phylo", "label": "Phylogénie", "short": "années → mois", "tip": "Plusieurs millions d’arbres phylogénétiques pour détecter les transferts de gènes.", "a": 1095, "b": 90, "aText": "plusieurs années", "bText": "quelques mois" }
+        ]
+      }
+    },
+    {
+      "short": "Loi de Moore",
+      "slides": "Diapo 8",
+      "title": "La loi de Moore",
+      "concept": "En 1965, Gordon Moore (Intel) observe que le nombre de transistors sur un circuit intégré, au coût minimal, double tous les 24 mois. Une exponentielle tenue pendant des décennies.",
+      "formula": { "label": "LOI", "eq": "N(t) = N<sub>0</sub> · 2<sup>(t − t<sub>0</sub>) / 2</sup>", "note": "t en années · doublement tous les 24 mois" },
+      "vocab": [
+        ["Transistor", "interrupteur élémentaire d’un processeur."],
+        ["Éch. log.", "chaque graduation vaut × 10 : une exponentielle y devient une droite."],
+        ["Pentium 4", "le dernier grand saut de fréquence (3,8 GHz)."],
+        ["Itanium 2", "premier point « Dual-Core » du graphe."]
+      ],
+      "quiz": { "q": "Avec un doublement tous les 2 ans, par combien est multiplié le nombre de transistors en 10 ans ?", "opts": ["× 5", "× 10", "× 32"], "a": 2 },
+      "why": "10 ans = 5 doublements : 2⁵ = 32. En 20 ans : 2¹⁰ ≈ 1 000. C’est pour cela que le graphe de la diapo utilise une échelle logarithmique.",
+      "fig": "Fig. 3 — Transistors par puce, 1971 → 2006. Touchez une puce, changez d’échelle.",
+      "scene": {
+        "type": "bars",
+        "log": true,
+        "unitLabel": "transistors",
+        "growth": { "label": "×2 tous les 2 ans", "factor": 2, "every": 2 },
+        "items": [
+          { "label": "4004", "x": 1971, "value": 2300, "valueText": "2 300", "tip": "Intel 4004 (1971) : 2 300 transistors." },
+          { "label": "8086", "x": 1978, "value": 29000, "valueText": "29 000", "tip": "Intel 8086 (1978)." },
+          { "label": "80386", "x": 1985, "value": 275000, "valueText": "275 000", "tip": "Intel 80386 (1985)." },
+          { "label": "Pentium", "x": 1993, "value": 3100000, "valueText": "3,1 M", "tip": "Pentium (1993)." },
+          { "label": "Pentium 4", "x": 2000, "value": 42000000, "valueText": "42 M", "tip": "Pentium 4 (2000) — jusqu’à 3,8 GHz." },
+          { "label": "Itanium 2", "x": 2006, "value": 1720000000, "valueText": "1,72 Md", "tip": "Itanium 2 Dual-Core (2006)." }
+        ]
+      }
+    },
+    {
+      "short": "Mur de la chaleur",
+      "slides": "Diapo 9",
+      "title": "Le mur de la chaleur",
+      "concept": "Monter la fréquence d’horloge coûte toujours plus d’énergie et de chaleur. Vers 2005 on plafonne à 3,8 GHz (Pentium 4 Extreme Edition) : au-delà de ~4 GHz, impossible de dissiper la chaleur.",
+      "formula": { "label": "RAPPEL", "eq": "P ≈ C · V² · f", "note": "V doit monter avec f, donc P croît à peu près comme f³ (approximation classique, hors diapo)." },
+      "vocab": [
+        ["Fréquence", "nombre de cycles d’horloge par seconde (GHz)."],
+        ["Dissipation", "évacuer la chaleur produite par la puce."],
+        ["Les deux murs", "énergie et chaleur."],
+        ["Dual Core", "deux cœurs sur une même puce."]
+      ],
+      "quiz": { "q": "Pourquoi la fréquence des processeurs stagne-t-elle à partir de 2005 ?", "opts": ["On ne sait plus graver de transistors", "Consommation d’énergie et dissipation de chaleur", "Les logiciels ne suivaient plus"], "a": 1 },
+      "why": "Ce sont les deux murs : énergie et chaleur. La réponse a été de mettre plusieurs cœurs plus lents sur une puce : 2 cœurs à 2,6 GHz font ~1,4× plus de travail qu’un cœur à 3,8 GHz en chauffant moins, à condition que le programme soit parallèle.",
+      "fig": "Fig. 4 — Une puce, un thermomètre et le mur des 4 GHz. Utilisez le curseur à gauche.",
+      "scene": {
+        "type": "model",
+        "visual": "chip",
+        "param": { "id": "f", "label": "Fréquence", "min": 1, "max": 5, "step": 0.1, "value": 2, "unit": "GHz" },
+        "toggle": { "id": "n", "label": "Dual Core", "off": 1, "on": 2 },
+        "outputs": [
+          { "label": "chaleur", "expr": "n*(f/3.8)^3", "digits": 2, "warnAbove": 1.05 },
+          { "label": "travail", "expr": "n*f/3.8", "digits": 2 }
+        ],
+        "gauge": { "label": "Température", "expr": "n*(f/3.8)^3", "max": 1.4 },
+        "threshold": { "value": 4, "label": "mur de la chaleur", "when": "n==1", "tip": "Au-delà de ~4 GHz, impossible de dissiper la chaleur : la fréquence plafonne vers 2005." },
+        "messages": [
+          { "when": "n==1 && f>=4", "text": "Mur de la chaleur : impossible à refroidir !" },
+          { "when": "n*(f/3.8)^3 > 1.05", "text": "Ça chauffe plus qu’un Pentium 4 à 3,8 GHz…" },
+          { "when": "n==2", "text": "Plus de travail, moins de chaleur — si le programme est parallèle." },
+          { "when": "true", "text": "Référence : 1 cœur à 3,8 GHz = chaleur ×1, travail ×1." }
+        ]
+      }
+    },
+    {
+      "short": "Multitâche & threads",
+      "slides": "Diapo 10",
+      "title": "Multitâche, multithreading, hyperthreading",
+      "concept": "Pour gagner en performance sans monter la fréquence, le parallélisme s’est glissé à trois niveaux : l’application (multithreading), le système d’exploitation (multitasking) et le matériel (hyperthreading).",
+      "formula": { "label": "MULTITASKING", "eq": "le SE commute si vite entre les tâches qu’elles semblent simultanées", "note": "C’est un parallélisme au niveau du SE, fondé sur l’ordonnancement." },
+      "vocab": [
+        ["Multitasking", "le SE alterne rapidement entre applications."],
+        ["Ordonnancement", "choisir quelle tâche occupe le cœur, et combien de temps."],
+        ["Multithreading", "une application découpée en fils d’exécution."],
+        ["Hyperthreading", "le matériel fait tourner deux fils sur un cœur."]
+      ],
+      "quiz": { "q": "Sur un processeur mono-cœur multitâche, deux applications s’exécutent-elles au même instant ?", "opts": ["Oui, le SE les lance en parallèle", "Non : le SE alterne très vite entre elles", "Oui, si l’horloge dépasse 3 GHz"], "a": 1 },
+      "why": "Un seul cœur = une seule tâche à la fois. Le SE découpe le temps en tranches et passe d’une tâche à l’autre : c’est une illusion de simultanéité. Plus le processeur est rapide, plus la commutation l’est aussi.",
+      "fig": "Fig. 5 — Trois niveaux de parallélisme et un cœur partagé entre trois tâches.",
+      "scene": {
+        "type": "scheduler",
+        "tasks": ["App A", "App B", "App C"],
+        "quantum": { "label": "Quantum", "min": 0.05, "max": 1.5, "value": 0.6 },
+        "ht": { "label": "Hyperthreading" },
+        "levels": [
+          { "id": "hw", "title": "MATÉRIEL", "sub": "hyperthreading", "tip": "Le processeur exécute deux fils sur un même cœur." },
+          { "id": "os", "title": "SYSTÈME (SE)", "sub": "multitasking", "tip": "Le SE commute rapidement entre les tâches : ordonnancement multi-tâche." },
+          { "id": "app", "title": "APPLICATION", "sub": "multithreading", "tip": "Le programme se découpe lui-même en plusieurs fils d’exécution." }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+node_modules/
+.env
+# your generated books stay local; only the demo books are part of the repo
+books/*
+!books/calcul-parallele/
+!books/blocks-demo/
+*.log
