@@ -5,3 +5,4 @@ books/*
 !books/calcul-parallele/
 !books/blocks-demo/
 *.log
+CLAUDE_CODE_PROMPT.md
