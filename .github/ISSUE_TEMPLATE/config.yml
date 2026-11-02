@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help installing
+    url: https://github.com/AlphaaCode/Popbook/discussions/categories/q-a
+    about: Ask in Discussions → Q&A. Someone who hit the same problem may already have the answer.
+  - name: Show a book you made
+    url: https://github.com/AlphaaCode/Popbook/discussions/categories/show-and-tell
+    about: Share your pop-up book in Discussions → Show and tell.
+  - name: Beginner's guide (PDF)
+    url: https://github.com/AlphaaCode/Popbook/blob/main/docs/PopBook-Beginners-Guide.pdf
+    about: Step-by-step installation and troubleshooting, no coding needed.

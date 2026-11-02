@@ -1,0 +1,38 @@
+name: New scene block idea
+description: Propose a new kind of 3D model for the right-hand page
+labels: ["scene block", "enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Scene blocks are the 3D models on the right page (race, bars, model, plot, flow, stack, scheduler, network, showcase). A good block explains a **kind of idea** that appears in many courses, not just one lesson.
+  - type: textarea
+    id: idea
+    attributes:
+      label: What kind of idea would it explain?
+      placeholder: "Cycles that repeat (the Krebs cycle, the water cycle, an engine cycle…)"
+    validations:
+      required: true
+  - type: textarea
+    id: interaction
+    attributes:
+      label: What would the reader see and do?
+      placeholder: "A ring of paper stations; pressing play sends a glowing token around; clicking a station shows what changes there."
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: An example lesson that needs it
+      description: A course topic, or a page from a public PDF, where existing blocks fall short.
+  - type: textarea
+    id: json
+    attributes:
+      label: Sketch of the JSON (optional)
+      render: json
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to build this block myself

@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    ignore:
+      # three.js and pdf.js are pinned on purpose: the viewer and the exported HTML depend on these exact versions.
+      - dependency-name: three
+      - dependency-name: pdfjs-dist
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

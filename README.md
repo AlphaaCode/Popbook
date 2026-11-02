@@ -1,5 +1,10 @@
 # PopBook Studio
 
+[![CI](https://github.com/AlphaaCode/Popbook/actions/workflows/ci.yml/badge.svg)](https://github.com/AlphaaCode/Popbook/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node 18.17+](https://img.shields.io/badge/node-%E2%89%A518.17-339933?logo=node.js&logoColor=white)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 Turn any course PDF into an **interactive 3D pop-up textbook** in your browser, using your own AI: an API key, a
 local model, or a coding agent such as Claude Code. Inspired by *Every Joule* by Techartist.
 
@@ -8,6 +13,9 @@ local model, or a coding agent such as Claude Code. Inspired by *Every Joule* by
 Each spread is a lesson. The **left page** is printed text: concept, key formula, vocabulary, a *predict first* quiz
 and a lift-the-flap answer. The **right page** holds a paper-craft 3D model you poke at to see the idea work.
 Answer the quiz and touch every part of the model, and the lesson gets its stamp.
+
+> **Not a developer?** The [**beginner's guide (PDF)**](docs/PopBook-Beginners-Guide.pdf) explains every step —
+> installing Node.js, downloading PopBook, connecting an AI and making your first book — with no coding needed.
 
 | | |
 |---|---|
@@ -19,8 +27,8 @@ Answer the quiz and touch every part of the model, and the lesson gets its stamp
 You need **Node.js 18.17 or newer**.
 
 ```bash
-git clone <this repo> popbook
-cd popbook
+git clone https://github.com/AlphaaCode/Popbook.git
+cd Popbook
 npm install
 npm start
 ```
@@ -198,6 +206,13 @@ tools/              check.mjs, pdf2pages.mjs, export.mjs
 - **Another device on my network can't connect.** That's by design: the server only listens on 127.0.0.1 and
   rejects requests that are not addressed to localhost. Set `HOST=0.0.0.0` only if you understand that anyone on
   your network could then run builds with your keys.
+
+## Contributing
+
+Bug reports, ideas for new scene blocks, translations and pull requests are all welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md); questions go to [Discussions](https://github.com/AlphaaCode/Popbook/discussions).
+Please report security issues privately (see [SECURITY.md](SECURITY.md)). Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

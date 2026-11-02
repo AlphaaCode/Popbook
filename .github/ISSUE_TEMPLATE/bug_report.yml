@@ -1,0 +1,71 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never paste an API key** in an issue. If the problem is installing or starting PopBook, check the troubleshooting pages of the [beginner's guide](https://github.com/AlphaaCode/Popbook/blob/main/docs/PopBook-Beginners-Guide.pdf) first.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Drop a 10-page PDF
+        2. Choose Claude API
+        3. Click Build
+        4. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error message or build log
+      description: Copy the red error line(s) from the terminal or the Building panel, and any errors from the browser console (F12 → Console).
+      render: text
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where is the problem?
+      options:
+        - Installing / starting (npm install, npm start)
+        - Studio (dropping a PDF, settings, building)
+        - The 3D book viewer
+        - Exported HTML file
+        - Agent mode (/popup-book, Claude Code, Codex, Gemini CLI)
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: AI provider
+      options:
+        - Not relevant
+        - Claude Code
+        - Claude API
+        - OpenAI API
+        - Gemini API
+        - OpenAI-compatible (Ollama, LM Studio, OpenRouter…)
+        - Codex CLI
+        - Gemini CLI
+        - Mock
+  - type: input
+    id: env
+    attributes:
+      label: OS, Node version and browser
+      placeholder: "Windows 11, Node 22.11 (node -v), Chrome 131"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: PopBook version or commit
+      placeholder: "v0.1.0, or the commit hash from git log -1"
