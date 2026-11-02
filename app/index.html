@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PopBook Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="studio.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">⟡</span><div><b>PopBook Studio</b><small>course PDF → interactive 3D pop-up textbook</small></div></div>
+  <nav><a href="#library">Your books</a><a href="/viewer/?book=calcul-parallele" target="_blank">Example</a></nav>
+</header>
+
+<main>
+  <section class="card" id="source">
+    <h2><i>1</i> Your lesson</h2>
+    <label id="drop" tabindex="0">
+      <input type="file" id="file" accept=".pdf,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp" multiple hidden>
+      <div class="dropInner">
+        <div class="big">Drop a PDF here</div>
+        <div class="small">or click to choose · also works with .md / .txt notes and photos of pages</div>
+      </div>
+    </label>
+    <div id="fileInfo" hidden>
+      <div class="row between"><div><b id="fname"></b> <span id="fmeta" class="muted"></span></div><button class="link" id="clearFile">change</button></div>
+      <div class="row range">
+        <label>Pages <input type="number" id="from" min="1" value="1"></label>
+        <span>→</span>
+        <label><input type="number" id="to" min="1" value="10"></label>
+        <span class="muted small" id="rangeHint">click a page to start there · shift-click to end there</span>
+      </div>
+      <div id="thumbs"></div>
+    </div>
+  </section>
+
+  <section class="card" id="ai">
+    <h2><i>2</i> Connect your AI</h2>
+    <div class="field">
+      <label for="provider">Model or agent</label>
+      <select id="provider"></select>
+      <p class="hint" id="provHint"></p>
+    </div>
+    <div class="grid2">
+      <div class="field" id="modelField"><label for="model">Model</label><input id="model" placeholder="default"></div>
+      <div class="field" id="baseField"><label for="baseUrl">Base URL</label><input id="baseUrl" placeholder="http://localhost:11434/v1"></div>
+    </div>
+    <div class="field" id="keyField">
+      <label for="apiKey">API key <span class="muted" id="keyState"></span></label>
+      <input id="apiKey" type="password" placeholder="sk-… (or put it in .env)" autocomplete="off">
+      <label class="check"><input type="checkbox" id="rememberKey"> remember on this computer</label>
+    </div>
+    <details>
+      <summary>Options</summary>
+      <div class="grid2">
+        <div class="field"><label for="lang">Book language</label>
+          <select id="lang"><option value="auto">Same as the source</option><option value="en">English</option><option value="fr">Français</option><option value="ar">العربية</option><option value="es">Español</option><option value="de">Deutsch</option><option value="it">Italiano</option><option value="pt">Português</option><option value="tr">Türkçe</option></select></div>
+        <div class="field"><label for="slug">Book folder name</label><input id="slug" placeholder="auto from file name"></div>
+        <div class="field"><label for="per">Pages per AI call</label><input id="per" type="number" min="3" max="40" value="15"></div>
+        <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="sendImages" checked> send page images (diagrams, tables)</label></div>
+      </div>
+      <div class="field"><label for="extra">Extra instructions <span class="muted">(optional)</span></label>
+        <textarea id="extra" rows="3" placeholder="e.g. Students are 2nd-year biology. Prefer 'race' and 'plot' models. Make quizzes harder."></textarea></div>
+    </details>
+    <button id="go" class="primary" disabled>Build my pop-up book</button>
+    <p class="hint center" id="goHint">Drop a lesson first.</p>
+  </section>
+
+  <section class="card wide" id="progress" hidden>
+    <div class="row between"><h2><i>3</i> Building <span id="jobTitle" class="muted"></span></h2><button class="link" id="cancel">cancel</button></div>
+    <div class="bar"><div id="barFill"></div></div>
+    <pre id="log"></pre>
+    <div class="row" id="doneRow" hidden>
+      <a class="primary" id="openBook" target="_blank">Open the book →</a>
+      <a class="secondary" id="exportBook">Download as one HTML file</a>
+    </div>
+  </section>
+
+  <section class="card wide" id="library">
+    <div class="row between"><h2>Your books</h2><button class="link" id="refresh">refresh</button></div>
+    <div id="books"></div>
+    <div class="agentBox">
+      <h3>Prefer your terminal or a coding agent?</h3>
+      <p>Open this folder in <b>Claude Code</b> (desktop or CLI), Codex or Gemini CLI and run:</p>
+      <pre>/popup-book path/to/lesson.pdf 1-10</pre>
+      <p class="muted">The agent reads <code>CLAUDE.md</code> / <code>AGENTS.md</code> and <code>prompts/system.md</code>, writes <code>books/&lt;name&gt;/book.json</code> and checks it with <code>npm run check</code>. Agents may also write fully custom 3D scenes.</p>
+    </div>
+  </section>
+</main>
+<script type="module" src="studio.js"></script>
+</body>
+</html>

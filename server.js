@@ -40,6 +40,11 @@ async function api(req, res, url) {
     const body = JSON.parse(await readBody(req));
     if (!PROVIDERS[body.provider]) return send(res, 400, { error: 'Unknown provider' });
     if (!Array.isArray(body.pages) || !body.pages.length) return send(res, 400, { error: 'No pages' });
+    // page numbers become file names: integers only
+    body.pages = body.pages.filter(p => p && Number.isInteger(p.n) && p.n > 0 && p.n < 100000).map(p => ({ n: p.n, text: String(p.text || ''), image: typeof p.image === 'string' ? p.image : undefined }));
+    const ns = body.pages.map(p => p.n);
+    if (!ns.length) return send(res, 400, { error: 'No valid pages' });
+    if (!Array.isArray(body.range) || !body.range.every(Number.isInteger)) body.range = [Math.min(...ns), Math.max(...ns)];
     const slug = slugify(body.slug || body.fileName); const id = randomUUID(); const ac = new AbortController();
     const job = { ...body, id, status: 'running', log: [], slug, started: Date.now(), signal: ac.signal, abort: () => ac.abort() };
     const log = m => { job.log.push(`[${new Date().toLocaleTimeString()}] ${m}`); if (job.log.length > 2000) job.log.splice(0, 500); console.log('[job ' + id.slice(0, 6) + '] ' + m); };

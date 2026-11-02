@@ -159,7 +159,7 @@ export async function startViewer({ book: input, base = '.', allowCustom = true 
   function frame() { narrow = innerWidth < 760 || innerHeight > innerWidth * 1.1; document.body.classList.toggle('narrow', narrow);
     const w = innerWidth, h = narrow ? innerHeight * 0.52 : innerHeight; renderer.setSize(w, h, false); canvas.style.height = h + 'px'; camera.aspect = w / h; camera.updateProjectionMatrix();
     const tan = Math.tan(camera.fov * Math.PI / 360); const target = narrow ? new THREE.Vector3(0.5, 0, 0.02) : new THREE.Vector3(0, 0, 0.05);
-    const d = Math.max((narrow ? 0.58 : 1.12) / (tan * camera.aspect), (narrow ? 0.72 : 0.78) / tan);
+    const d = Math.max((narrow ? 0.58 : 1.24) / (tan * camera.aspect), (narrow ? 0.72 : 0.78) / tan);
     camHome.look.copy(target); camHome.pos.set(target.x, target.y + Math.sin(PITCH) * d, target.z + Math.cos(PITCH) * d);
     if (camMode === 'home') { camera.position.copy(camHome.pos); camLook.copy(camHome.look); camera.lookAt(camLook); }
     if (narrow) pageEl.style.transform = 'none'; fitPage(); }
