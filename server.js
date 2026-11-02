@@ -45,7 +45,10 @@ async function api(req, res, url) {
     const ns = body.pages.map(p => p.n);
     if (!ns.length) return send(res, 400, { error: 'No valid pages' });
     if (!Array.isArray(body.range) || !body.range.every(Number.isInteger)) body.range = [Math.min(...ns), Math.max(...ns)];
-    const slug = slugify(body.slug || body.fileName); const id = randomUUID(); const ac = new AbortController();
+    // never overwrite an existing book: thermo, thermo-2, thermo-3…
+    const base = slugify(body.slug || body.fileName); let slug = base;
+    for (let n = 2; fs.existsSync(path.join(BOOKS, slug, 'book.json')) || [...jobs.values()].some(j => j.slug === slug && j.status === 'running'); n++) slug = `${base}-${n}`;
+    const id = randomUUID(); const ac = new AbortController();
     const job = { ...body, id, status: 'running', log: [], slug, started: Date.now(), signal: ac.signal, abort: () => ac.abort() };
     const log = m => { job.log.push(`[${new Date().toLocaleTimeString()}] ${m}`); if (job.log.length > 2000) job.log.splice(0, 500); console.log('[job ' + id.slice(0, 6) + '] ' + m); };
     jobs.set(id, job);

@@ -3,7 +3,7 @@
 Turn any course PDF into an **interactive 3D pop-up textbook** in your browser, using your own AI: an API key, a
 local model, or a coding agent such as Claude Code. Inspired by *Every Joule* by Techartist.
 
-![An open pop-up book: the printed lesson on the left, a pen-and-ink 3D model on the right](docs/book.jpg)
+![Drop a PDF in the studio, build, open the book, turn a page, fill a race jar and drag the model slider](docs/demo.gif)
 
 Each spread is a lesson. The **left page** is printed text: concept, key formula, vocabulary, a *predict first* quiz
 and a lift-the-flap answer. The **right page** holds a paper-craft 3D model you poke at to see the idea work.
@@ -51,22 +51,22 @@ validation, the errors and the previous answer go back to the model, up to two t
 
 ## AI options
 
-| Option | What you need | What gets sent |
-|---|---|---|
-| **Claude API** | `ANTHROPIC_API_KEY` | the page range as a real PDF document (sliced with pdf-lib) + extracted text |
-| **OpenAI API** | `OPENAI_API_KEY` | page images (rendered in your browser) + text, JSON mode |
-| **Gemini API** | `GEMINI_API_KEY` | the page range as an inline PDF + text, JSON response type |
-| **OpenAI-compatible** | a base URL (+ key if the server wants one) | text, plus page images if you tick *send page images* (vision models only) |
-| **Claude Code** | `claude` on your PATH, logged in | nothing leaves your machine except through the agent itself |
-| **Codex CLI** | `codex` on your PATH | same |
-| **Gemini CLI** | `gemini` on your PATH | same |
+| Option | What you need | Default model | What gets sent |
+|---|---|---|---|
+| **Claude API** | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | the page range as a real PDF document (sliced with pdf-lib) + extracted text |
+| **OpenAI API** | `OPENAI_API_KEY` | `gpt-6-astra` | page images (rendered in your browser) + text, JSON mode |
+| **Gemini API** | `GEMINI_API_KEY` | `gemini-4-argon` | the page range as an inline PDF + text, JSON response type |
+| **OpenAI-compatible** | a base URL (+ key if the server wants one) | `qwen2.5:14b` | text, plus page images if you tick *send page images* (vision models only) |
+| **Claude Code** | `claude` on your PATH, logged in | your Claude Code default | nothing leaves your machine except through the agent itself |
+| **Codex CLI** | `codex` on your PATH | the CLI's default | same |
+| **Gemini CLI** | `gemini` on your PATH | the CLI's default | same |
 
 **Keys.** Put them in `.env` (copy [`.env.example`](.env.example)) or paste them in the studio. A pasted key is
 sent only to the local server for that job and is never written to disk. Tick *remember on this computer* to keep it
 in this browser's localStorage.
 
 **Models.** Defaults come from `.env` (`ANTHROPIC_MODEL`, `OPENAI_MODEL`, `GEMINI_MODEL`, `COMPAT_MODEL`) and can
-be changed per build in the studio. Stronger models make better books, especially for picking scene blocks and
+be changed per build in the studio. The defaults are each provider's current flagship with PDF or image input (checked November 2026); `claude-sonnet-5-5` is a cheaper Claude option. Stronger models make better books, especially for picking scene blocks and
 writing faithful, concise text.
 
 **OpenAI-compatible base URLs:**

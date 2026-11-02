@@ -182,6 +182,7 @@ export async function startViewer({ book: input, base = '.', allowCustom = true 
       if (camMode !== 'home') { camMode = 'home'; await flyTo(camHome.pos, camHome.look, 0.8); }
       const dir = n > cur ? 1 : -1; pageEl.classList.add('hidden'); await foldDown(current);
       sheet.visible = true; setSheet(dir > 0 ? 0 : Math.PI, dir); const old = current;
+      old.G.visible = false; // flat labels and readout cards don't fold; the sheet now covers the page, so hide them
       await tween(0.9, u => setSheet(dir > 0 ? u * Math.PI : (1 - u) * Math.PI, dir), 'io');
       sheet.visible = false; bookG.remove(old.G);
       cur = n; try { history.replaceState(null, '', location.pathname + location.search + (n ? '#p' + n : '')); } catch (e) {}
