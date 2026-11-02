@@ -99,7 +99,7 @@ export async function startViewer({ book: input, base = '.', allowCustom = true 
     let h = `<div class="inner"><div class="hd"><div><div class="kicker"><span>${esc(i === 0 && S.kind === 'cover' ? ui.popup : ui.lesson + ' ' + i)}${S.slides ? ' · ' + esc(S.slides) : ''}</span></div><h1>${esc(S.title)}</h1></div>${S.kind !== 'cover' && S.targets.length ? '<div class="stamp"></div>' : ''}</div>`;
     h += `<p class="concept">${esc(S.concept)}</p>`;
     if (S.kind === 'cover') {
-      if (S.plan && S.plan.length) h += `<h4>${esc(ui.plan)}</h4><ol class="plan">${S.plan.map(p => `<li>${esc(p)}</li>`).join('')}</ol>`;
+      if (S.plan && S.plan.length) h += `<h4>${esc(ui.plan)}</h4><ol class="plan">${S.plan.map(p => `<li>${esc(String(p).replace(/^\s*\d+\s*[.)]\s*/, '') /* models often number items themselves */)}</li>`).join('')}</ol>`;
       h += `<div class="formula"><b class="lab">${esc(ui.howtoLab)}</b>${esc(S.howto || ui.howto)}</div>`;
     } else {
       h += `<div class="formula"><b class="lab">${esc(S.formula.label)}</b><div class="eq">${rich(S.formula.eq)}</div>${S.formula.note ? `<small>${esc(S.formula.note)}</small>` : ''}</div>`;

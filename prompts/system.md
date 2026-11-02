@@ -192,3 +192,16 @@ Interactive ids: `param`, `curve`.
 ### `custom` — agent mode only
 `{ "type": "custom", "module": "scenes/my-scene.js" }` loads a hand-written scene module from the
 book folder. Only use it when you can write files (see `CLAUDE.md`). API mode must never use it.
+
+## 6. Optional book fields
+
+- `"coverColor": "#2f5fa8"` — cloth colour of the hardback (default yellow).
+- `"ui": { "predict": "Guess first" }` — override any interface string (see `viewer/i18n.js`; built-in: en, fr, ar).
+- `plot.x.log: true` — logarithmic horizontal axis (needs `x.min > 0`).
+
+## 7. Final checklist
+
+- Every spread except the cover has `formula`, 3–4 `vocab`, a `quiz` with a valid `a`, `why` and `fig`.
+- Every `expr` / `when` only uses the param id, the toggle id (and `x` in `plot`).
+- No fact is invented; added standard facts are flagged in `formula.note`.
+- The whole answer is one JSON object and nothing else.
