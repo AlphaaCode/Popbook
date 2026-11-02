@@ -6,7 +6,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ROOT, BOOKS, generate, slugify } from './lib/generate.js';
-import { PROVIDERS, hasBinary } from './lib/providers.js';
+import { PROVIDERS, agentAvailable } from './lib/providers.js';
 import { exportBook } from './lib/export.js';
 import { validateBook } from './lib/validate.js';
 
@@ -24,9 +24,9 @@ async function readBody(req, limit = 120 * 1024 * 1024) { const chunks = []; let
 async function api(req, res, url) {
   const p = url.pathname;
   if (p === '/api/config' && req.method === 'GET') {
-    const providers = Object.entries(PROVIDERS).map(([id, P]) => ({ id, label: P.label, model: P.model || '', agent: !!P.agent, available: P.agent ? hasBinary(P.agent) : true,
+    const providers = Object.entries(PROVIDERS).map(([id, P]) => ({ id, label: P.label, model: P.model || '', agent: !!P.agent, available: P.agent ? agentAvailable(P.agent) : true,
       hasKey: P.env ? !!process.env[P.env] : true, needsKey: !!P.env && id !== 'compat', baseUrl: P.baseUrl || '', images: !!P.images, pdf: !!P.pdf }));
-    return send(res, 200, { providers, defaultProvider: process.env.DEFAULT_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : hasBinary('claude') ? 'agent-claude' : 'anthropic') });
+    return send(res, 200, { providers, defaultProvider: process.env.DEFAULT_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : agentAvailable('claude') ? 'agent-claude' : 'anthropic') });
   }
   if (p === '/api/books' && req.method === 'GET') {
     await fsp.mkdir(BOOKS, { recursive: true });
@@ -50,7 +50,7 @@ async function api(req, res, url) {
     const log = m => { job.log.push(`[${new Date().toLocaleTimeString()}] ${m}`); if (job.log.length > 2000) job.log.splice(0, 500); console.log('[job ' + id.slice(0, 6) + '] ' + m); };
     jobs.set(id, job);
     generate(job, log).then(book => { job.status = 'done'; job.title = book.title; log(`Done: "${book.title}" — ${book.spreads.length} spreads. Open /viewer/?book=${slug}`); })
-      .catch(e => { job.status = 'error'; job.error = e.message; log('ERROR: ' + e.message); })
+      .catch(e => { job.status = 'error'; if (job.error !== 'Cancelled') job.error = e.message; log('ERROR: ' + job.error); })
       .finally(() => { delete job.pdfBase64; delete job.pages; delete job.apiKey; });
     return send(res, 200, { id, slug });
   }
@@ -95,6 +95,6 @@ const server = http.createServer(async (req, res) => {
 });
 server.listen(PORT, HOST, () => {
   console.log(`\n  📖  PopBook Studio is running →  http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}\n`);
-  const avail = Object.entries(PROVIDERS).filter(([, P]) => P.agent ? hasBinary(P.agent) : !P.env || process.env[P.env]).map(([, P]) => P.label);
+  const avail = Object.entries(PROVIDERS).filter(([, P]) => P.agent ? agentAvailable(P.agent) : !P.env || process.env[P.env]).map(([, P]) => P.label);
   console.log('  Ready providers: ' + (avail.join(', ') || 'none yet — add an API key in .env or paste it in the studio') + '\n');
 });
