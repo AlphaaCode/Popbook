@@ -14,7 +14,7 @@ export const COLUMNS = ['date', 'pdf', 'pages', 'preset', 'model', 'validFirstTr
   'inputTokens', 'cachedInput', 'outputTokens', 'reasoning', 'cost', 'seconds', 'estInput', 'estOutput', 'error'];
 export const csvLine = row => COLUMNS.map(c => { const v = String(row[c] ?? ''); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(',');
 
-async function readPages(file, from, to) {
+export async function readPages(file, from, to) {
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const buf = await fs.readFile(file);
   const doc = await getDocument({ data: new Uint8Array(buf), standardFontDataUrl: path.join(ROOT, 'node_modules/pdfjs-dist/standard_fonts/') + path.sep, verbosity: 0 }).promise;

@@ -38,8 +38,15 @@ test('estimate: native PDF and page images add tokens only when they are really 
   assert.equal(estimate({ ...base, caps: { images: true, pdf: true }, hasPdf: true }).input, estimate({ ...base, caps: { pdf: true }, hasPdf: true }).input); // pdf wins over images, like generate()
 });
 
+test('estimate: models that think by default are charged for it', () => {
+  const g = estimate(base), a = estimate({ ...base, provider: 'anthropic', model: 'claude-opus-5-5' });
+  assert.ok(g.reasoning > 0 && a.reasoning === 0);
+  assert.ok(g.output > a.output);
+});
+
 test('cost: priced models only, cache hits are cheaper', () => {
-  assert.ok(priceOf('gemini-4-argon-preview-1'));
+  assert.ok(priceOf('gemini-4-argon') && priceOf('gemini-3.8-flash'));
+  assert.equal(priceOf('gemini-3.8-flash-lite'), null); // never a neighbour's price
   const u = { input: 1e6, cachedInput: 5e5, output: 1e5, reasoning: 0 };
   assert.ok(Math.abs(costOf('gemini-4-argon', u) - 2.05) < 1e-9); // 0.5M×$2 + 0.5M×$0.10 + 0.1M×$10
   assert.equal(costOf('some-local-model', u), null);
