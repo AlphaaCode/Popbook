@@ -6,6 +6,16 @@ All notable changes to PopBook Studio are listed here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Token measurement** (v0.2 phase 1). Every provider now reports token usage (`input`, `cachedInput`, `output`,
+  `reasoning`): Claude API, OpenAI, Gemini and OpenAI-compatible servers from their own usage fields, Claude Code from its
+  result event (other CLIs report none). The job log shows it on every answer, with a cost when the model has a known price,
+  and `book.source` keeps the totals (`usage`, `calls`, `repairs`).
+- **Pre-flight estimate** in the studio: "~N calls, ~Xk in / ~Yk out tokens, ≈ $Z" under the Build button, from `POST /api/estimate`
+  (`lib/estimate.js`, `gpt-tokenizer`) and a price table in `lib/models.js`.
+- **`npm run eval`**: runs the PDFs in `eval/pdfs/` through the pipeline for each provider with a key and writes `eval/results.csv`
+  (first-try validity, repairs, tokens, cost, seconds, estimate vs. real). `--providers mock` is a free dry run.
+  `eval/baseline.csv` is the reference for the token-saving work that follows.
+- The mock provider now goes through the real parse / validate / repair loop, so the pipeline is testable offline.
 - Beginner's guide (PDF) for non-technical users: `docs/PopBook-Beginners-Guide.pdf`.
 - Contributing guide, security policy, issue forms, pull request template, Dependabot and code owners.
 - CI now also runs on Windows and Node 24.
