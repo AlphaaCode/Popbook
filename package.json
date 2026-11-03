@@ -16,6 +16,7 @@
     "export": "node tools/export.mjs"
   },
   "dependencies": {
+    "gpt-tokenizer": "^4.1.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "4.10.38",
     "three": "0.160.0"
