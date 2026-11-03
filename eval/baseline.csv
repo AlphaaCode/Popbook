@@ -1,0 +1,3 @@
+date,pdf,pages,preset,model,validFirstTry,repairs,calls,spreads,warnings,inputTokens,cachedInput,outputTokens,reasoning,cost,seconds,estInput,estOutput,error
+2026-11-03T20:35:48.340Z,Claude-Call-Me-Guide.pdf,1-10,gemini,gemini-3.8-flash,1,0,1,5,0,14310,0,9644,6391,0.0469,196.3,14135,9860,
+2026-11-03T20:37:37.967Z,coursCalculParallel2025.pdf,1-10,gemini,gemini-3.8-flash,1,0,1,5,0,10127,0,10173,6558,0.04574,109.5,10411,9860,
