@@ -13,7 +13,8 @@
     "test": "node --test",
     "check": "node tools/check.mjs",
     "pages": "node tools/pdf2pages.mjs",
-    "export": "node tools/export.mjs"
+    "export": "node tools/export.mjs",
+    "eval": "node tools/eval.mjs"
   },
   "dependencies": {
     "gpt-tokenizer": "^4.1.0",

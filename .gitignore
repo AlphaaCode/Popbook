@@ -6,3 +6,8 @@ books/*
 !books/blocks-demo/
 *.log
 CLAUDE_CODE_PROMPT.md
+
+# eval: the course PDFs are yours (not ours to publish); results are re-made by every run
+eval/pdfs/*.pdf
+eval/results.csv
+eval/out/
