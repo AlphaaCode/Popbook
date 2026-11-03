@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ROOT, BOOKS, generate, slugify } from './lib/generate.js';
+import { ROOT, BOOKS, generate, slugify, systemPrompt } from './lib/generate.js';
 import { PROVIDERS, agentAvailable } from './lib/providers.js';
+import { estimate } from './lib/estimate.js';
 import { exportBook } from './lib/export.js';
 import { validateBook } from './lib/validate.js';
 
@@ -35,6 +36,12 @@ async function api(req, res, url) {
       try { const b = JSON.parse(await fsp.readFile(path.join(BOOKS, d.name, 'book.json'), 'utf8')); const st = await fsp.stat(path.join(BOOKS, d.name, 'book.json'));
         out.push({ slug: d.name, title: b.title, spreads: b.spreads?.length || 0, lang: b.lang, source: b.source || null, updated: st.mtimeMs }); } catch {} }
     return send(res, 200, out.sort((a, b) => b.updated - a.updated));
+  }
+  if (p === '/api/estimate' && req.method === 'POST') { // tokens and cost of a build, before spending any (text only: images are counted, not sent)
+    const b = JSON.parse(await readBody(req)); const P = PROVIDERS[b.provider];
+    if (!P || P.agent || !Array.isArray(b.pages) || !Array.isArray(b.range)) return send(res, 200, null); // agents report their usage after the run
+    const pages = b.pages.filter(p => p && Number.isInteger(p.n)).map(p => ({ n: p.n, text: String(p.text || ''), image: !!p.image }));
+    return send(res, 200, estimate({ system: await systemPrompt(), pages, range: b.range, pagesPerCall: b.pagesPerCall, provider: b.provider, model: b.model || P.model, caps: P, hasPdf: !!b.hasPdf, sendImages: b.sendImages }));
   }
   if (p === '/api/generate' && req.method === 'POST') {
     const body = JSON.parse(await readBody(req));

@@ -132,7 +132,32 @@ for (const id of ['lang', 'per', 'extra']) $('#' + id).addEventListener('input',
 const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
-function refreshGo() {
+/* pre-flight estimate of tokens and cost: the server counts them; each page's text is read once and cached on `src` */
+let estText = '', estTimer = 0, estSeq = 0;
+const kTok = n => n >= 1000 ? Math.round(n / 1000) + 'k' : String(n);
+const wantsImages = P => !P.agent && P.id !== 'mock' && !P.pdf && $('#sendImages').checked;
+function scheduleEstimate() {
+  clearTimeout(estTimer); estText = ''; const P = prov();
+  if (!src || !P || P.agent || running) return;
+  const seq = ++estSeq;
+  estTimer = setTimeout(async () => {
+    try {
+      const [a, z] = clampRange(), images = wantsImages(P), pages = [], texts = (src.texts ||= new Map());
+      for (let n = a; n <= z; n++) {
+        if (src.kind === 'pdf') { if (!texts.has(n)) texts.set(n, await pageText(await src.doc.getPage(n))); pages.push({ n, text: texts.get(n), image: images }); }
+        else pages.push({ n, text: src.pages[n - 1].text, image: !!src.pages[n - 1].image });
+      }
+      const body = { provider: P.id, model: $('#model').value.trim() || undefined, range: [a, z], pagesPerCall: +$('#per').value || 15, pages, hasPdf: src.kind === 'pdf', sendImages: images };
+      const e = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+      if (seq !== estSeq || !e) return; // the settings changed meanwhile, or this is an agent
+      estText = ` · estimate: ${e.calls} call${e.calls > 1 ? 's' : ''}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
+      refreshGo(true);
+    } catch {} // an estimate is a courtesy: never block the build on it
+  }, 400);
+}
+
+function refreshGo(keepEstimate) {
+  if (!keepEstimate) scheduleEstimate();
   const P = prov(), go = $('#go'), hint = $('#goHint'); let why = '';
   if (!src) why = 'Drop a lesson first.';
   else if (!P) why = 'Pick a model.';
@@ -140,7 +165,7 @@ function refreshGo() {
   else if (P.needsKey && !P.hasKey && !$('#apiKey').value.trim()) why = 'Add an API key (or put it in .env).';
   else if (P.id === 'compat' && !$('#baseUrl').value.trim()) why = 'Set the base URL of your server.';
   go.disabled = !!why || running; hint.className = 'hint center';
-  hint.textContent = running ? 'A book is being built…' : why || (() => { const [a, z] = clampRange(); return `Pages ${a}–${z} (${z - a + 1}) → ${P.label.split(' (')[0]}`; })();
+  hint.textContent = running ? 'A book is being built…' : why || (() => { const [a, z] = clampRange(); return `Pages ${a}–${z} (${z - a + 1}) → ${P.label.split(' (')[0]}${estText}`; })();
 }
 
 /* ------------------------------------------------------------------ */
@@ -162,7 +187,7 @@ $('#go').onclick = async () => {
   const card = $('#progress'); card.hidden = false; card.classList.remove('failed'); $('#doneRow').hidden = true; $('#cancel').hidden = false;
   logEl.innerHTML = ''; setBar(0.02); $('#jobTitle').textContent = '· ' + src.name; card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
-    const wantImages = !P.agent && P.id !== 'mock' && !P.pdf && $('#sendImages').checked;
+    const wantImages = wantsImages(P);
     const pages = [];
     if (src.kind === 'pdf') {
       log(`Reading pages ${a}–${z}${wantImages ? ' and rendering page images' : ''}…`);
