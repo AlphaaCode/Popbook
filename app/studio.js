@@ -121,15 +121,22 @@ function onProvider() {
   if (P.agent) { hint.textContent = P.available ? `Found on your PATH ✓ Runs on this computer with your own login; no API key needed. It writes books/<name>/book.json and checks it.` : `Not installed (no "${P.id.replace('agent-', '')}" command on your PATH). Install it and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (isMock) hint.textContent = 'Returns the example book instantly. For testing the pipeline.';
   else if (P.id === 'compat') hint.textContent = 'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1 · OpenRouter: https://openrouter.ai/api/v1 · Groq: https://api.groq.com/openai/v1';
-  else { hint.textContent = P.hasKey ? 'API key found in .env ✓' : 'Needs an API key: paste it below or add it to .env.'; hint.classList.add(P.hasKey ? 'ok' : 'warn'); }
+  else keyHint();
   refreshGo();
+}
+function keyHint() {
+  const P = prov(), hint = $('#provHint'); if (!P || P.agent || P.id === 'mock' || P.id === 'compat') return;
+  const pasted = !!$('#apiKey').value.trim();
+  hint.className = 'hint';
+  hint.textContent = P.hasKey ? 'API key found in .env ✓' : pasted ? 'API key added ✓' : 'Needs an API key: paste it below or add it to .env.';
+  hint.classList.add(P.hasKey || pasted ? 'ok' : 'warn');
 }
 provSel.onchange = onProvider;
 $('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); };
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
 $('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); };
 for (const id of ['lang', 'per', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); });
-const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); refreshGo(); };
+const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); keyHint(); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
 function refreshGo() {

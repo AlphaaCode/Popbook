@@ -1,6 +1,6 @@
 {
   "name": "popbook-studio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Turn any course PDF into an interactive 3D pop-up textbook with your own AI model or coding agent.",
   "type": "module",
   "license": "MIT",
