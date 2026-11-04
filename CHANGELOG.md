@@ -5,10 +5,15 @@ All notable changes to PopBook Studio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-11-04
+
 ### Added
 - Beginner's guide (PDF) for non-technical users: `docs/PopBook-Beginners-Guide.pdf`.
 - Contributing guide, security policy, issue forms, pull request template, Dependabot and code owners.
 - CI now also runs on Windows and Node 24.
+
+### Fixed
+- Studio: the "Needs an API key" hint now turns green when you paste a key, instead of staying red until a key is in `.env` ([#11](https://github.com/AlphaaCode/Popbook/issues/11)).
 
 ## [0.1.0] — 2026-11-02
 
@@ -29,5 +34,6 @@ First public release.
 - **Single-file HTML export**, CLI tools (`check`, `pages`, `export`) and unit tests.
 - Example books: `calcul-parallele` and `blocks-demo`.
 
-[Unreleased]: https://github.com/AlphaaCode/Popbook/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AlphaaCode/Popbook/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/AlphaaCode/Popbook/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/AlphaaCode/Popbook/releases/tag/v0.1.0
