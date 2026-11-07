@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 process.env.POPBOOK_MOCK = '1'; // before providers.js is evaluated
-const { generate, BOOKS } = await import('../lib/generate.js');
+const { generate, BOOKS, outputCap } = await import('../lib/generate.js');
 
 const EXAMPLE = await fs.readFile(new URL('../books/calcul-parallele/book.json', import.meta.url), 'utf8');
 const slugs = [];
@@ -70,6 +70,17 @@ test('prompt layout: system → pages → task, and a repair keeps that prefix b
   const user = first[1].content;
   assert.ok(user.indexOf('=== Page 1 ===\nAmdahl') < user.indexOf('The pages above are pages 1–2') && user.indexOf('The pages above') < user.indexOf('Prefer plots.'));
   assert.ok(repair[1].content.startsWith(user) && repair[1].content.length > user.length); // only the repair note is new
+});
+
+test('output cap: 1 500 tokens per possible spread, plus room to think', async () => {
+  assert.equal(outputCap('anthropic', 'claude-opus-5-5', 10), 1500 * 9); // up to 8 spreads + the cover; Claude does not think unasked
+  assert.equal(outputCap('gemini', 'gemini-3.8-flash', 10), 1500 * 9 + 1024); // its thinking budget
+  assert.equal(outputCap('openai', 'gpt-6-astra', 10), 1500 * 9 + 8000); // effort "low" has no fixed size
+  process.env.SPREAD_MAX_TOKENS = '1000';
+  try { assert.equal(outputCap('anthropic', 'x', 10), 9000); } finally { delete process.env.SPREAD_MAX_TOKENS; }
+  answers = [EXAMPLE]; sent = [];
+  await generate(job('compat', { baseUrl: base, model: 'm' }), () => {});
+  assert.equal(sent[0].max_tokens, outputCap('compat', 'm', 2)); // was 16 000 whatever the batch
 });
 
 test('input: text plus images of the figure pages; the native PDF only at high fidelity', async () => {

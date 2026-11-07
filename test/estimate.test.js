@@ -43,6 +43,8 @@ test('estimate: models that think by default are charged for it', () => {
   const g = estimate(base), a = estimate({ ...base, provider: 'anthropic', model: 'claude-opus-5-5' });
   assert.ok(g.reasoning > 0 && a.reasoning === 0);
   assert.ok(g.output > a.output);
+  assert.equal(estimate({ ...base, model: 'gemini-3.8-flash' }).reasoning, 2 * 1024); // its thinking budget, once per call
+  assert.ok(estimate({ ...base, model: 'gemini-9-unlisted' }).reasoning > 2 * 1024); // no budget: the measured default ratio
 });
 
 test('cost: priced models only, cache hits are cheaper', () => {

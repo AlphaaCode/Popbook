@@ -58,6 +58,20 @@ test('gemini stream skips thought parts', async () => {
   assert.equal(seen['/v1beta/models/m:streamGenerateContent'].body.generationConfig.responseMimeType, 'application/json');
 });
 
+test('output cap and reasoning go to each API in its own words; unknown models get no reasoning setting', async () => {
+  await callModel('openai', { system: 's', parts, apiKey: 'k', baseUrl: base, model: 'x', maxTokens: 9000, reasoning: { effort: 'low' } });
+  let b = seen['/chat/completions'].body;
+  assert.equal(b.max_completion_tokens, 9000); assert.equal(b.reasoning_effort, 'low');
+  await callModel('compat', { system: 's', parts, baseUrl: base, model: 'x', maxTokens: 9000, reasoning: { effort: 'low' } });
+  b = seen['/chat/completions'].body;
+  assert.equal(b.max_tokens, 9000); assert.equal(b.reasoning_effort, undefined); // a local server may not know it
+  await callModel('gemini', { system: 's', parts, apiKey: 'k', baseUrl: base, model: 'm', maxTokens: 5000, reasoning: { budget: 1024 } });
+  const cfg = () => seen['/v1beta/models/m:streamGenerateContent'].body.generationConfig;
+  assert.equal(cfg().maxOutputTokens, 5000); assert.deepEqual(cfg().thinkingConfig, { thinkingBudget: 1024 });
+  await callModel('gemini', { system: 's', parts, apiKey: 'k', baseUrl: base, model: 'm' });
+  assert.equal(cfg().thinkingConfig, undefined);
+});
+
 test('HTTP errors surface the provider message', async () => {
   await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/fail', model: 'x' }), /401.*bad key/);
   await assert.rejects(callModel('anthropic', { system: 's', parts, apiKey: '', model: 'x' }), /No Anthropic API key/);
