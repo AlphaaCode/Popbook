@@ -102,7 +102,7 @@ const saveSettings = () => store.set('studio', S);
 async function loadConfig() {
   const cfg = await fetch('/api/config').then(r => r.json());
   providers = cfg.providers; blocks = cfg.blocks || []; presets = cfg.presets || [];
-  provSel.innerHTML = providers.map(p => `<option value="${p.id}">${esc(p.label)}${p.agent && !p.available ? ' — not installed' : ''}</option>`).join('');
+  provSel.innerHTML = providers.map(p => `<option value="${p.id}">${esc(p.label)}${!p.available ? ' — not installed' : ''}</option>`).join('');
   provSel.value = providers.some(p => p.id === S.provider) ? S.provider : cfg.defaultProvider;
   for (const id of ['lang', 'extra']) if (S[id] !== undefined) $('#' + id).value = S[id];
   onProvider();
@@ -111,7 +111,7 @@ function onProvider() {
   const P = prov(); if (!P) return; S.provider = P.id; saveSettings();
   const isMock = P.id === 'mock', pm = P.presets?.[S.preset] || {};
   $('#modelField').hidden = isMock; $('#baseField').hidden = P.id !== 'compat';
-  $('#keyField').hidden = P.agent || isMock;
+  $('#keyField').hidden = P.agent || P.cli || isMock;
   $('#presetField').hidden = isMock; $('#preset').value = S.preset; $('#plannerField').hidden = P.agent || isMock;
   $('#modelLabel').textContent = P.agent ? 'Model' : 'Writer model';
   $('#model').value = S.models[P.id] || ''; $('#model').placeholder = pm.writer || P.model || (P.agent ? 'agent default' : 'default');
@@ -129,6 +129,7 @@ function onProvider() {
   hint.className = 'hint';
   if (P.agent) { hint.textContent = P.available ? `Found on your PATH ✓ Runs on this computer with your own login; no API key needed. It writes books/<name>/book.json and checks it.` : `Not installed (no "${P.id.replace('agent-', '')}" command on your PATH). Install it and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (isMock) hint.textContent = 'Returns the example book instantly. For testing the pipeline.';
+  else if (P.cli) { hint.textContent = P.available ? 'Found on your PATH ✓ The same staged pipeline, each call a "claude -p" with no tools, on your Claude login. Text only.' : `Not installed (no "${P.cli}" command on your PATH). Install Claude Code and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (P.id === 'compat') hint.textContent = 'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1 · OpenRouter: https://openrouter.ai/api/v1 · Groq: https://api.groq.com/openai/v1';
   else { hint.textContent = P.hasKey ? 'API key found in .env ✓' : 'Needs an API key: paste it below or add it to .env.'; hint.classList.add(P.hasKey ? 'ok' : 'warn'); }
   refreshGo();
@@ -182,7 +183,7 @@ function refreshGo(keepEstimate) {
   const P = prov(), go = $('#go'), hint = $('#goHint'); let why = '';
   if (!src) why = 'Drop a lesson first.';
   else if (!P) why = 'Pick a model.';
-  else if (P.agent && !P.available) why = 'This agent is not installed.';
+  else if (!P.available) why = `Not installed (no "${P.agent || P.cli}" command on your PATH).`;
   else if (P.needsKey && !P.hasKey && !$('#apiKey').value.trim()) why = 'Add an API key (or put it in .env).';
   else if (P.id === 'compat' && !$('#baseUrl').value.trim()) why = 'Set the base URL of your server.';
   go.disabled = !!why || running; hint.className = 'hint center';

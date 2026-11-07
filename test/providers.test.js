@@ -2,6 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { callModel, describeClaudeEvent, claudeUsage, addUsage, emptyUsage, fmtUsage } from '../lib/providers.js';
 
 const sse = events => events.map(e => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join('');
@@ -100,6 +101,19 @@ test('a JSON schema goes to each API its own way; a server that refuses it is as
   await callModel('compat', { system: 's', parts, baseUrl: base + '/noschema', model: 'x', schema });
   assert.deepEqual(requests.map(q => q.schema), [true, false, false]); // refused once, then not sent again
   assert.match(notes[0], /refused the JSON schema/);
+});
+
+test('claude-cli: claude -p without tools, our system prompt from a file, the schema as --json-schema, the answer and usage from its JSON', async () => {
+  process.env.CLAUDE_CLI_CMD = 'node ' + fileURLToPath(new URL('./fake-claude.mjs', import.meta.url));
+  try {
+    const { text, usage } = await callModel('claude-cli', { system: 'rules', parts, model: 'haiku', schema: { type: 'object' } });
+    const a = JSON.parse(text), arg = f => a.args[a.args.indexOf(f) + 1];
+    assert.deepEqual([a.input, a.system], ['hi', 'rules']); // text only: the pdf and image parts stay behind
+    assert.deepEqual([arg('--output-format'), arg('--tools'), arg('--model'), JSON.parse(arg('--json-schema'))], ['json', '', 'haiku', { type: 'object' }]);
+    for (const f of ['-p', '--safe-mode', '--no-session-persistence']) assert.ok(a.args.includes(f), f);
+    assert.deepEqual(usage, { input: 15, cachedInput: 5, output: 7, reasoning: 0 });
+    await assert.rejects(callModel('claude-cli', { system: 's', parts: [{ type: 'text', text: 'fail' }] }), /-p failed.*overloaded/);
+  } finally { delete process.env.CLAUDE_CLI_CMD; }
 });
 
 test('HTTP errors surface the provider message', async () => {
