@@ -10,13 +10,18 @@ const STREAMS = {
   '/chat/completions': sse([{ choices: [{ delta: { content: '{"title":' } }] }, { choices: [{ delta: { content: '"B"}' }, finish_reason: 'stop' }] },
     { choices: [], usage: { prompt_tokens: 200, completion_tokens: 300, prompt_tokens_details: { cached_tokens: 128 }, completion_tokens_details: { reasoning_tokens: 100 } } }, '[DONE]']),
   '/nousage/chat/completions': sse([{ choices: [{ delta: { content: '{}' }, finish_reason: 'stop' }] }, '[DONE]']),
+  '/tool/v1/messages': sse([{ type: 'content_block_start', content_block: { type: 'tool_use', name: 'answer', input: {} } }, { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"title":' } },
+    { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '"T"}' } }, { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 9 } }]),
   '/v1beta/models/m:streamGenerateContent': sse([{ candidates: [{ content: { parts: [{ text: 'thinking…', thought: true }, { text: '{"title":' }] } }], usageMetadata: { promptTokenCount: 500, candidatesTokenCount: 5, thoughtsTokenCount: 20 } }, { candidates: [{ content: { parts: [{ text: '"C"}' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 500, cachedContentTokenCount: 200, candidatesTokenCount: 120, thoughtsTokenCount: 80 } }]),
 };
-let server, base, seen = {};
+STREAMS['/noschema/chat/completions'] = STREAMS['/chat/completions'];
+let server, base, seen = {}, requests = [];
 before(async () => {
   server = http.createServer((req, res) => {
     let body = ''; req.on('data', c => body += c); req.on('end', () => {
       const path = req.url.split('?')[0]; seen[path] = { headers: req.headers, body: JSON.parse(body) };
+      requests.push({ path, schema: !!seen[path].body.response_format });
+      if (path === '/noschema/chat/completions' && seen[path].body.response_format) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"response_format json_schema is not supported"}}'); }
       if (path === '/fail/chat/completions') { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"bad key"}}'); }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       // split the stream at an awkward place to test buffering across chunks
@@ -71,6 +76,30 @@ test('output cap and reasoning go to each API in its own words; unknown models g
   assert.equal(cfg().mediaResolution, 'MEDIA_RESOLUTION_MEDIUM'); // an image at Gemini's default level costs two PDF pages
   await callModel('gemini', { system: 's', parts: parts.slice(0, 1), apiKey: 'k', baseUrl: base, model: 'm' });
   assert.equal(cfg().thinkingConfig, undefined); assert.equal(cfg().mediaResolution, undefined);
+});
+
+test('a JSON schema goes to each API its own way; a server that refuses it is asked again without, once', async () => {
+  const schema = { type: 'object', properties: { title: { type: 'string' }, log: { type: 'boolean' }, kind: { type: 'string', enum: ['cover'] } }, required: ['title'], additionalProperties: false };
+  const { text } = await callModel('anthropic', { system: 's', parts, apiKey: 'k', baseUrl: base + '/tool', model: 'x', schema });
+  assert.equal(text, '{"title":"T"}'); // the forced tool's input, streamed as input_json_delta
+  let b = seen['/tool/v1/messages'].body;
+  assert.deepEqual([b.tools[0].input_schema, b.tool_choice], [schema, { type: 'tool', name: 'answer' }]);
+  await callModel('openai', { system: 's', parts, apiKey: 'k', baseUrl: base, model: 'x', schema });
+  const rf = seen['/chat/completions'].body.response_format;
+  assert.deepEqual([rf.type, rf.json_schema.strict, rf.json_schema.schema.required], ['json_schema', true, ['title', 'log', 'kind']]); // strict: every key listed…
+  assert.deepEqual([rf.json_schema.schema.properties.log.type, rf.json_schema.schema.properties.kind.enum], [['boolean', 'null'], ['cover', null]]); // …optional ones nullable
+  await callModel('compat', { system: 's', parts, baseUrl: base, model: 'x', schema });
+  assert.deepEqual(seen['/chat/completions'].body.response_format, { type: 'json_schema', json_schema: { name: 'answer', schema } }); // Ollama, llama.cpp: as is
+  await callModel('gemini', { system: 's', parts, apiKey: 'k', baseUrl: base, model: 'm', schema });
+  assert.deepEqual(seen['/v1beta/models/m:streamGenerateContent'].body.generationConfig.responseJsonSchema, schema);
+  await callModel('compat', { system: 's', parts, baseUrl: base, model: 'x' });
+  assert.equal(seen['/chat/completions'].body.response_format, undefined); // no schema: nothing asked of a local server
+  requests = []; const notes = [];
+  const r = await callModel('compat', { system: 's', parts, baseUrl: base + '/noschema', model: 'x', schema, onNote: n => notes.push(n) });
+  assert.equal(r.text, '{"title":"B"}');
+  await callModel('compat', { system: 's', parts, baseUrl: base + '/noschema', model: 'x', schema });
+  assert.deepEqual(requests.map(q => q.schema), [true, false, false]); // refused once, then not sent again
+  assert.match(notes[0], /refused the JSON schema/);
 });
 
 test('HTTP errors surface the provider message', async () => {

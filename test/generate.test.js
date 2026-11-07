@@ -61,6 +61,9 @@ test('stages: the planner reads every page; each writer gets only its pages and 
   const [o] = of('outline'), [w1] = of(1), [w2] = of(2), prompts = await loadPrompts();
   assert.equal(o.body.messages[0].content, prompts.planner); // each step its own rules…
   for (const s of [w1, w2]) assert.equal(s.body.messages[0].content, prompts.writer); // …the same for every writer: one cached prefix
+  const sch = s => s.body.response_format.json_schema.schema; // structured output: the outline's schema, each writer its block's
+  assert.deepEqual([sch(o).required, sch(w1).properties.scene.properties.type.enum, sch(w2).properties.scene.properties.type.enum], [['title', 'spreads'], ['network'], ['bars']]);
+  assert.ok(!sch(w1).properties.quiz && sch(w2).properties.quiz); // the cover's schema has no quiz
   const ot = userText(o.body);
   assert.ok(ot.includes('=== Page 1 ===\nAmdahl') && ot.includes('=== Page 2 ===\nGustafson') && ot.includes('Prefer plots.'));
   assert.ok(!Object.values(prompts.blocks).some(spec => ot.includes(spec))); // the planner needs the table, not the specs
