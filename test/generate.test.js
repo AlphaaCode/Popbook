@@ -178,3 +178,15 @@ test('result cache: the same pages again cost nothing, a changed model misses it
     assert.equal(sent.length, 3);
   } finally { for (const f of await fs.readdir(CACHE)) if (!known.has(f)) await fs.rm(path.join(CACHE, f)); }
 });
+
+test('outline review: the spreads written are the edited outline\'s, in its order', async () => {
+  reply = (t, n) => t === 'outline' ? OUTLINE : JSON.stringify(t === 1 ? BARS : COVER); sent = [];
+  let seen = null;
+  const review = async o => { seen = structuredClone(o); return { ...o, title: 'Edited', spreads: [{ ...o.spreads[1], intent: 'growth' }] }; };
+  const lines = [], j = fake({ review }), book = await generate(j, m => lines.push(m));
+  assert.equal(seen.spreads.length, 2); // the reviewer got the planner's outline
+  assert.deepEqual([book.title, book.spreads.length, book.spreads[0].scene.type, sent.length], ['Edited', 1, 'bars', 2]);
+  assert.ok(userText(of(1)[0].body).includes('1. pages 2 · bars — growth')); // writers see the edited plan
+  assert.ok(lines.some(l => l.startsWith('Outline (reviewed): "Edited", 1 spreads')));
+  assert.equal(JSON.parse(await fs.readFile(path.join(BOOKS, j.slug, 'outline.json'), 'utf8')).title, 'Edited');
+});

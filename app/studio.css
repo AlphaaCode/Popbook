@@ -71,6 +71,11 @@ a.primary{width:auto}
 #log{font-size:12px;line-height:1.5;background:#1f1d1a;color:#ece4d2;padding:12px 14px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0 0 14px}
 #log .err{color:#ff9c8f}#log .warn{color:#f0c674}
 #doneRow{gap:12px}
+#outlineReview{margin:0 0 14px}
+#rvList{margin:0 0 12px;padding-inline-start:24px;display:grid;gap:6px}
+#rvList li{display:grid;grid-template-columns:44px 84px 118px 1fr auto;gap:8px;align-items:center}
+#rvList .cv{font:600 10px "JetBrains Mono",monospace;color:var(--muted);text-transform:uppercase}
+#rvList .ops{display:flex;gap:12px}
 #progress.failed .bar{border-color:var(--accent)}
 
 #books{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:22px}
@@ -89,4 +94,5 @@ a.primary{width:auto}
   main{grid-template-columns:1fr;padding:0 16px 40px}
   header{padding:14px 16px;flex-wrap:wrap}
   .grid2{grid-template-columns:1fr}
+  #rvList li{grid-template-columns:44px 1fr 1fr auto}#rvList .in{grid-column:1/-1}
 }

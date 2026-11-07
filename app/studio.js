@@ -92,7 +92,7 @@ fromEl.onchange = toEl.onchange = markRange;
 /* ------------------------------------------------------------------ */
 /* 2 · the AI                                                          */
 /* ------------------------------------------------------------------ */
-let providers = [];
+let providers = [], blocks = [];
 const S = store.get('studio', {}); S.models ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {};
 const provSel = $('#provider');
 const prov = () => providers.find(p => p.id === provSel.value);
@@ -100,7 +100,7 @@ const saveSettings = () => store.set('studio', S);
 
 async function loadConfig() {
   const cfg = await fetch('/api/config').then(r => r.json());
-  providers = cfg.providers;
+  providers = cfg.providers; blocks = cfg.blocks || [];
   provSel.innerHTML = providers.map(p => `<option value="${p.id}">${esc(p.label)}${p.agent && !p.available ? ' — not installed' : ''}</option>`).join('');
   provSel.value = providers.some(p => p.id === S.provider) ? S.provider : cfg.defaultProvider;
   for (const id of ['lang', 'extra']) if (S[id] !== undefined) $('#' + id).value = S[id];
@@ -117,6 +117,7 @@ function onProvider() {
   $('#apiKey').placeholder = P.id === 'compat' ? 'optional (Ollama / LM Studio need none)' : 'paste a key, or put it in .env';
   $('#sendImages').checked = S.images[P.id] ?? P.images; $('#sendImages').closest('.field').hidden = P.agent || isMock;
   $('#fidelity').checked = !!S.hifi[P.id]; $('#fidelityField').hidden = !P.pdf;
+  $('#review').checked = !!S.review; $('#reviewField').hidden = P.agent; // agents write the whole book themselves
   const hint = $('#provHint'), keyState = $('#keyState');
   keyState.textContent = P.hasKey && P.needsKey ? '· key found in .env ✓' : '';
   hint.className = 'hint';
@@ -131,6 +132,7 @@ $('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); sa
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
 $('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
 $('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
+$('#review').onchange = e => { S.review = e.target.checked; saveSettings(); };
 for (const id of ['lang', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); });
 const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
@@ -203,16 +205,39 @@ $('#go').onclick = async () => {
     } else for (const p of await readRange(a, z)) pages.push({ n: p.n, text: p.text, image: p.image });
     const body = { provider: P.id, model: $('#model').value.trim() || undefined, baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
       fileName: src.name, totalPages: src.count, range: [a, z], pages, pdfBase64: src.kind === 'pdf' ? b64(src.buf) : undefined,
-      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, sendImages: wantImages, fidelity: hifi ? 'high' : undefined, extra: $('#extra').value.trim() };
+      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, sendImages: wantImages, fidelity: hifi ? 'high' : undefined, review: !P.agent && $('#review').checked, extra: $('#extra').value.trim() };
     log('Uploading to the local server…');
     const res = await fetch('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);
     jobId = j.id; await follow(j.id, P);
   } catch (e) { log('ERROR: ' + e.message); fail(); }
 };
+/* outline review: the build waits on the server until the edited plan comes back */
+const pagesLabel = ns => ns.length > 1 && ns.at(-1) - ns[0] === ns.length - 1 ? `${ns[0]}-${ns.at(-1)}` : ns.join(', ');
+function reviewRow(s) {
+  const li = document.createElement('li'); if (s.kind === 'cover') li.dataset.cover = '1';
+  li.innerHTML = `<span class="cv">${s.kind === 'cover' ? 'cover' : ''}</span><input class="pg mono" value="${esc(pagesLabel(s.pages))}" aria-label="pages" title="pages, e.g. 2-3 or 4, 6">`
+    + `<select aria-label="scene block">${blocks.map(b => `<option${b === s.block ? ' selected' : ''}>${b}</option>`).join('')}</select>`
+    + `<input class="in" value="${esc(s.intent)}" aria-label="what the spread teaches">`
+    + `<span class="ops"><button type="button" class="link" data-op="up" aria-label="move up">↑</button><button type="button" class="link" data-op="down" aria-label="move down">↓</button><button type="button" class="link" data-op="del" aria-label="delete this spread">✕</button></span>`;
+  li.onclick = e => { const op = e.target.dataset.op; if (op === 'up') li.previousElementSibling?.before(li); else if (op === 'down') li.nextElementSibling?.after(li); else if (op === 'del') li.remove(); };
+  return li;
+}
+function showReview(id, outline) {
+  const box = $('#outlineReview'), list = $('#rvList'); box.hidden = false; $('#rvHint').textContent = '';
+  $('#rvTitle').value = outline.title; list.replaceChildren(...outline.spreads.map(reviewRow));
+  $('#rvGo').onclick = async () => {
+    const spreads = [...list.children].map(li => ({ ...(li.dataset.cover && { kind: 'cover' }), pages: li.querySelector('.pg').value.split(/[,;\s]+/).filter(Boolean),
+      block: li.querySelector('select').value, intent: li.querySelector('.in').value.trim() })); // a cover moved down becomes a lesson (server side)
+    const res = await fetch(`/api/jobs/${id}/outline`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outline: { ...outline, title: $('#rvTitle').value.trim(), spreads } }) });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok) box.hidden = true; else $('#rvHint').textContent = j.error || res.statusText;
+  };
+}
+
 /** Progress of an API build from its log: the outline is the first 15 %, then each finished spread (✓, or ⚠ when code wrote it). */
 function apiProgress(text) {
-  const m = /Outline: .*?(\d+) spreads/.exec(text); if (!m) return 0.1 + (/Outline → /.test(text) ? 0.05 : 0);
+  const m = [...text.matchAll(/Outline(?: \(reviewed\))?: ".*?", (\d+) spreads/g)].pop(); if (!m) return 0.1 + (/Outline → /.test(text) ? 0.05 : 0);
   return 0.25 + 0.73 * (text.match(/Spread \d+\/\d+ [✓⚠]/g) || []).length / +m[1]; // the log's lines, joined
 }
 async function follow(id, P) {
@@ -223,7 +248,8 @@ async function follow(id, P) {
     r.log.forEach(log); since = r.next;
     if (!P.agent) setBar(apiProgress(logEl.textContent));
     if (r.status === 'done') { setBar(1); $('#cancel').hidden = true; $('#openBook').href = `/viewer/?book=${encodeURIComponent(r.slug)}`; $('#exportBook').href = `/api/books/${encodeURIComponent(r.slug)}/export`; $('#doneRow').hidden = false; running = false; refreshGo(); loadBooks(); return; }
-    if (r.status === 'error') { fail(); return; }
+    if (r.status === 'review' && $('#outlineReview').hidden) showReview(id, r.outline);
+    if (r.status === 'error') { $('#outlineReview').hidden = true; fail(); return; }
     await new Promise(res => setTimeout(res, 900));
   }
 }
