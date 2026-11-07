@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { validateBook, sceneTargets } from '../lib/validate.js';
+import { validateBook, sceneTargets, spreadSchema, outlineSchema, API_BLOCKS } from '../lib/validate.js';
 import { extractJson } from '../lib/generate.js';
 
 const lesson = scene => ({
@@ -101,4 +101,35 @@ test('extractJson handles fences, chatter and braces in strings', () => {
   assert.equal(extractJson('Here: {"a":{"b":"\\"}"}} trailing } junk'), '{"a":{"b":"\\"}"}}');
   assert.throws(() => extractJson('no json here'), /did not return JSON/);
   assert.throws(() => extractJson('{"a": [1, 2'), /cut off/);
+});
+
+/** The errors of v against a toSchema() schema (its subset of JSON Schema). Keys the schema leaves unasked (ids, short…) pass. */
+const fits = (v, s, at = '$') => {
+  if (s.anyOf) return s.anyOf.some(x => !fits(v, x, at).length) ? [] : [at + ': fits no variant'];
+  const t = Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v;
+  if (t !== s.type && !(s.type === 'number' && t === 'integer')) return [`${at}: ${t}, not ${s.type}`];
+  if (s.enum && !s.enum.includes(v)) return [`${at}: "${v}" not allowed`];
+  if (t === 'array') return [...(v.length < (s.minItems ?? 0) || v.length > (s.maxItems ?? Infinity) ? [`${at}: ${v.length} items`] : []),
+    ...v.flatMap((x, i) => fits(x, s.items, `${at}[${i}]`))];
+  if (t !== 'object') return [];
+  return [...s.required.filter(k => !(k in v)).map(k => `${at}.${k}: missing`), ...Object.entries(v).flatMap(([k, x]) =>
+    s.properties[k] ? fits(x, s.properties[k], `${at}.${k}`) : ['id', 'short', 'kind', 'howto'].includes(k) ? [] : [`${at}.${k}: unknown`])];
+};
+
+test('schemas: every spread of the example books fits its block\'s schema and the loose one; mistakes do not', () => {
+  for (const slug of ['calcul-parallele', 'blocks-demo']) {
+    for (const s of JSON.parse(fs.readFileSync(`books/${slug}/book.json`, 'utf8')).spreads.filter(s => s.scene.type !== 'custom')) {
+      assert.deepEqual(fits(s, spreadSchema(s.scene.type, s.kind === 'cover')), [], `${slug}: ${s.title}`);
+      assert.deepEqual(fits(s, spreadSchema(null)), [], `${slug}: ${s.title} (loose)`);
+    }
+  }
+  const s = lesson({ type: 'flow', steps: [{ label: 'a' }, { label: 'b' }] }), flow = spreadSchema('flow');
+  assert.deepEqual(fits(s, flow), []);
+  const { quiz, ...noQuiz } = s;
+  assert.deepEqual(fits({ ...noQuiz, extra: 1 }, flow), ['$.quiz: missing', '$.extra: unknown']);
+  assert.deepEqual(fits({ ...s, scene: { type: 'flow', steps: [{ label: 'a' }] } }, flow), ['$.scene.steps: 1 items']);
+  assert.ok(fits({ ...s, scene: { type: 'bars', items: [] } }, flow).includes('$.scene.type: "bars" not allowed'));
+  assert.deepEqual(spreadSchema(null).properties.scene.anyOf.map(x => x.properties.type.enum[0]), API_BLOCKS);
+  assert.deepEqual(fits({ title: 'T', spreads: [{ kind: 'cover', pages: [1], block: 'network', intent: 'i' }] }, outlineSchema()), []);
+  assert.deepEqual(fits({ title: 'T', spreads: [{ pages: [1], block: 'timeline', intent: 'i' }] }, outlineSchema()), ['$.spreads[0].block: "timeline" not allowed']);
 });
