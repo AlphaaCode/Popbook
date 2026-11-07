@@ -60,19 +60,40 @@ its own call, which gets only its pages and its block's spec. Every answer is fi
 one that still fails validation is sent back with its errors, then to the planner model once, and if it still fails
 PopBook writes that spread itself from the page text and flags it ⚠ in *Your books*, where any spread can be
 regenerated. Valid answers are kept in `.cache/`: the same pages with the same prompts and model cost nothing the
-second time. Agents (Claude Code, Codex, Gemini CLI) write the whole book in one session instead.
+second time. Agents (Claude Code, Codex, Gemini CLI) write the whole book in one session instead, from a bundle the studio
+prepares (see *Local agents* below).
 
 ## AI options
 
 | Option | What you need | Default model | What gets sent |
 |---|---|---|---|
-| **Claude API** | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | the page range as a real PDF document (sliced with pdf-lib) + extracted text |
-| **OpenAI API** | `OPENAI_API_KEY` | `gpt-6-astra` | page images (rendered in your browser) + text, JSON mode |
-| **Gemini API** | `GEMINI_API_KEY` | `gemini-4-argon` | the page range as an inline PDF + text, JSON response type |
-| **OpenAI-compatible** | a base URL (+ key if the server wants one) | `qwen2.5:14b` | text, plus page images if you tick *send page images* (vision models only) |
-| **Claude Code** | `claude` on your PATH, logged in | your Claude Code default | nothing leaves your machine except through the agent itself |
+| **Claude API** | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | page text + images of figure pages (the PDF itself at high fidelity); answers through a forced tool |
+| **OpenAI API** | `OPENAI_API_KEY` | `gpt-6-astra` | page text + images of figure pages; strict JSON schema |
+| **Gemini API** | `GEMINI_API_KEY` | `gemini-4-argon` | page text + images of figure pages (the PDF itself at high fidelity); JSON schema |
+| **OpenAI-compatible** | a base URL (+ key if the server wants one) | `qwen2.5:14b` | text, plus figure images if you tick *send page images* (vision models only); JSON schema |
+| **Claude Code, prompt only** | `claude` on your PATH, logged in | `opus` (plans), `haiku` (writes) | page text, one `claude -p` per call, no tools; JSON schema |
+| **Claude Code** | `claude` on your PATH, logged in | `sonnet` (Balanced) | `books/<slug>/input/`; the agent works in the repo folder |
 | **Codex CLI** | `codex` on your PATH | the CLI's default | same |
-| **Gemini CLI** | `gemini` on your PATH | the CLI's default | same |
+| **Gemini CLI** | `gemini` on your PATH | `gemini-4-argon` (Balanced) | same |
+
+**Presets.** *Budget*, *Balanced* (default) and *Best* pick the models instead of you. The **planner** writes the outline
+(one call), the **writer** each spread (many calls, the bulk of the tokens):
+
+| Preset | Planner | Writer | Figure images |
+|---|---|---|---|
+| Budget | cheap model, low reasoning | cheap model, low reasoning | no |
+| Balanced | default model, medium reasoning | cheap model, low reasoning | yes |
+| Best | default model, medium reasoning | default model, medium reasoning | yes |
+
+The cheap model is a known cheaper sibling (`gemini-3.8-flash`, `claude-haiku-5-5`, `haiku`), else the default model.
+`PLANNER_MODEL` / `WRITER_MODEL` in `.env` override a role and may send it to another provider: a known model id
+(`claude-opus-5-5` uses `ANTHROPIC_API_KEY`) or `provider:model` (`compat:llama3:8b`). The studio's *planner model* and
+*writer model* fields override both. Models, prices and what each model accepts live in [`lib/models.js`](lib/models.js).
+
+**Structured output.** Every API call sends the JSON schema of its answer, generated from the shape table in
+[`lib/validate.js`](lib/validate.js): the outline's, or the spread's for its scene block. Small local models gain the most:
+Ollama turns the schema into its `format`, llama.cpp into a GBNF grammar, so the answer cannot leave the shape. A server
+that refuses the schema is asked again without it.
 
 **Keys.** Put them in `.env` (copy [`.env.example`](.env.example)) or paste them in the studio. A pasted key is
 sent only to the local server for that job and is never written to disk. Tick *remember on this computer* to keep it
@@ -92,8 +113,10 @@ writing faithful, concise text.
 | Groq | `https://api.groq.com/openai/v1` |
 
 **Local agents.** The studio finds `claude`, `codex` and `gemini` on your PATH and runs them in the repo folder.
-They read `CLAUDE.md` / `AGENTS.md`, write `books/<slug>/book.json`, run the checker and fix their own errors; their
-output streams into the build log. Claude Code runs with
+It first writes `books/<slug>/input/`: `pages.md` (every page's text), `fig-<n>.jpg` (the figure pages) and, when a plain
+model of the same family can plan (`claude -p`, or the Gemini / OpenAI API with a key), `outline.json`. `PROMPT.md` then
+names exactly the files to read and forbids opening the PDF or exploring the repo. The agent writes
+`books/<slug>/book.json`, runs the checker and fixes its own errors; its output streams into the build log. Claude Code runs with
 `--permission-mode acceptEdits --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,Bash(node tools/check.mjs:*),Bash(node tools/pdf2pages.mjs:*)"`.
 To change a command, set `AGENT_CMD_CLAUDE`, `AGENT_CMD_CODEX` or `AGENT_CMD_GEMINI` in `.env`; the prompt is
 appended as the last argument.

@@ -64,6 +64,27 @@ Staged pipeline (v0.2 phase 3). API builds no longer write the whole book in one
   (`"fallback": [parts]`) instead of failing the build.
 - The estimate counts one outline call plus ~0.6 spreads per page.
 
+Routing and weak models (v0.2 phase 4):
+- **Presets** *Budget* / *Balanced* (default) / *Best* in the studio and the eval (`--preset`). A preset picks a model tier
+  and a reasoning level for the planner (the outline call) and the writer (each spread), and whether figure pages go as
+  images. Balanced plans with the provider's default model and writes with its cheaper sibling (gemini-3.8-flash,
+  claude-haiku-5-5). `PLANNER_MODEL` / `WRITER_MODEL` in `.env` override a role, on another provider too
+  (`claude-opus-5-5`, `compat:llama3:8b`); the studio's *planner* and *writer model* fields override both.
+- **Capability table** in `lib/models.js`: per model its provider, price (input, output, cached input per 1M tokens),
+  image and PDF input, JSON-schema support and caching. Cost is summed per call, so mixed roles are priced right
+  (`book.source.cost`).
+- **Each step its own rules.** The planner's system prompt is `core.md` sections 1, 2, 3, 6 (~1 100 tokens), the writer's
+  1, 4, 5, 7 (~1 190), instead of all ~1 740 on every call.
+- **Structured output.** `lib/validate.js` now holds the shape table of every spread and scene block and turns it into JSON
+  schemas (`spreadSchema(block)`, `outlineSchema()`). Every call sends one: OpenAI `json_schema` strict, Gemini
+  `responseJsonSchema`, Anthropic a forced tool, OpenAI-compatible servers `json_schema` (Ollama maps it to `format`,
+  llama.cpp to a GBNF grammar). A server that refuses it is asked again without.
+- **`claude-cli` provider**: the staged pipeline on a Claude login, no API key. Each call is `claude -p` with no tools,
+  `--safe-mode`, our system prompt and `--json-schema`. Text only.
+- **Agent bundle.** A local agent gets `books/<slug>/input/` (`pages.md`, `fig-<n>.jpg`, and `outline.json` when a plain
+  model of its family can plan: `claude -p`, or the Gemini / OpenAI API with a key) and a short `PROMPT.md` that names
+  the files to read and forbids opening the PDF or exploring the repo. Claude Code and Gemini CLI get `--model` per preset.
+
 ### Fixed
 - Photos of pages never reached Claude or Gemini (the image switch was hidden and off for providers that read PDFs).
 - The studio's estimate now refreshes when the model, pages per call or image options change.

@@ -6,6 +6,8 @@ A fixed engine (`viewer/`) renders any `books/<slug>/book.json`. **Your job is t
 
 ## Make a book
 
+If the studio started you, `books/<slug>/PROMPT.md` names the files to read (`books/<slug>/input/`): follow it and skip step 1.
+
 1. **Get the pages.** Either extract text:
    ```
    node tools/pdf2pages.mjs <file.pdf> --pages 1-10 --out books/<slug>
