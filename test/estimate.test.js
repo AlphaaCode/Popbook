@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { countTokens, estimate } from '../lib/estimate.js';
-import { costOf, priceOf } from '../lib/models.js';
+import { costOf, priceOf, capsOf, reasoningFor } from '../lib/models.js';
 
 test('countTokens copes with special-token text', () => {
   assert.ok(countTokens('Hello world') > 0);
@@ -53,4 +53,10 @@ test('cost: priced models only, cache hits are cheaper', () => {
   assert.equal(costOf('gemini-4-argon', null), null);
   assert.equal(estimate({ ...base, model: 'qwen2.5:14b' }).cost, null);
   assert.ok(estimate(base).cost > 0);
+});
+
+test('capability table: provider defaults for unknown models, a row wins; reasoning only where the model has a setting', () => {
+  assert.deepEqual([capsOf('compat', 'qwen2.5:14b').schema, capsOf('compat', 'qwen2.5:14b').images, capsOf('anthropic', 'claude-x').caching], [true, undefined, 'explicit']);
+  assert.equal(capsOf('gemini', 'gemini-3.8-flash').price[0], 0.75);
+  assert.deepEqual([reasoningFor('gpt-6-astra'), reasoningFor('gemini-4-argon', 'medium'), reasoningFor('claude-opus-5-5'), reasoningFor('llama3')], [{ effort: 'low' }, { budget: 4096 }, undefined, undefined]);
 });
