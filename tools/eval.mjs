@@ -56,6 +56,7 @@ export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir
       rows.push(row);
       if (book) await fs.copyFile(path.join(BOOKS, slug, 'book.json'), path.join(outDir, 'out', `${slugify(f)}__${id}.json`));
       if (!keep) await fs.rm(path.join(BOOKS, slug), { recursive: true, force: true });
+      lines.filter(l => /invalid book|did not return JSON|cut off|output-token limit/.test(l)).forEach(l => log('    ' + l.trim().slice(0, 300))); // why a try was rejected
       log(err ? `  ✗ ${row.error}` : `  ✓ ${row.spreads} spreads, ${row.validFirstTry ? 'valid first try' : row.repairs + ' repair(s)'}, in ${row.inputTokens} / out ${row.outputTokens} tokens${row.cost === '' ? '' : `, $${row.cost}`}, ${row.seconds} s`);
     }
   }

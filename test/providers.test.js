@@ -68,8 +68,9 @@ test('output cap and reasoning go to each API in its own words; unknown models g
   await callModel('gemini', { system: 's', parts, apiKey: 'k', baseUrl: base, model: 'm', maxTokens: 5000, reasoning: { budget: 1024 } });
   const cfg = () => seen['/v1beta/models/m:streamGenerateContent'].body.generationConfig;
   assert.equal(cfg().maxOutputTokens, 5000); assert.deepEqual(cfg().thinkingConfig, { thinkingBudget: 1024 });
-  await callModel('gemini', { system: 's', parts, apiKey: 'k', baseUrl: base, model: 'm' });
-  assert.equal(cfg().thinkingConfig, undefined);
+  assert.equal(cfg().mediaResolution, 'MEDIA_RESOLUTION_MEDIUM'); // an image at Gemini's default level costs two PDF pages
+  await callModel('gemini', { system: 's', parts: parts.slice(0, 1), apiKey: 'k', baseUrl: base, model: 'm' });
+  assert.equal(cfg().thinkingConfig, undefined); assert.equal(cfg().mediaResolution, undefined);
 });
 
 test('HTTP errors surface the provider message', async () => {
