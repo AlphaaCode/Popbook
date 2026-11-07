@@ -245,3 +245,29 @@ test('a role routed to another provider is called there; book.source records bot
   assert.deepEqual([book.source.model, book.source.plannerModel, book.source.preset], ['w', 'p', 'balanced']);
   assert.deepEqual([of('outline')[0].body.model, of(1)[0].body.model], ['p', 'w']);
 });
+
+test('agent mode: a bundle in input/ (pages.md, the figures, a plan), a PROMPT.md that names what to read, and no PDF', async () => {
+  const env = { AGENT_CMD_CLAUDE: 'node test/fake-agent.mjs', PLANNER_MODEL: 'mock:mock' }; // the plan from the mock: no claude call
+  Object.assign(process.env, env);
+  try {
+    const pages = [{ n: 1, text: 'Amdahl' }, { n: 2, text: '', image: 'data:image/jpeg;base64,/9j/AA==' }];
+    let j = job('agent-claude', { pages, pdfBase64: Buffer.from('%PDF-1.4').toString('base64') }), dir = path.join(BOOKS, j.slug), lines = [];
+    const book = await generate(j, l => lines.push(l));
+    assert.equal(book.title, EX.title);
+    const md = await fs.readFile(path.join(dir, 'input/pages.md'), 'utf8'), prompt = await fs.readFile(path.join(dir, 'PROMPT.md'), 'utf8');
+    assert.ok(md.includes('## Page 1\n\nAmdahl') && md.includes('## Page 2\n\n(no extractable text)\n\n![page 2](fig-2.jpg)'));
+    assert.deepEqual([...await fs.readFile(path.join(dir, 'input/fig-2.jpg'))], [0xff, 0xd8, 0xff, 0x00]);
+    const outline = JSON.parse(await fs.readFile(path.join(dir, 'input/outline.json'), 'utf8'));
+    assert.ok(prompt.includes(`books/${j.slug}/input/outline.json`) && prompt.includes('Do not open source.pdf'));
+    for (const b of new Set(outline.spreads.map(s => s.block))) assert.ok(prompt.includes(`prompts/blocks/${b}.md`), b); // only the plan's blocks
+    assert.ok(!prompt.includes('prompts/blocks/<name>.md'));
+    assert.equal(book.source.plannerModel, 'mock:mock'); // who planned
+    await assert.rejects(fs.access(path.join(dir, 'pages'))); // the API-mode page files are not written
+    delete process.env.PLANNER_MODEL; process.env.CLAUDE_CLI_CMD = 'popbook-no-such-command';
+    j = job('agent-claude'); dir = path.join(BOOKS, j.slug); lines = [];
+    await generate(j, l => lines.push(l)); // claude -p is not there: the agent plans the book itself
+    assert.ok(lines.some(l => /No outline from .*the agent plans the book itself/.test(l)));
+    assert.ok((await fs.readFile(path.join(dir, 'PROMPT.md'), 'utf8')).includes('prompts/blocks/<name>.md for each block you use'));
+    await assert.rejects(fs.access(path.join(dir, 'input/outline.json')));
+  } finally { for (const k of [...Object.keys(env), 'CLAUDE_CLI_CMD']) delete process.env[k]; }
+});

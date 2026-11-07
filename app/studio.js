@@ -150,7 +150,7 @@ $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 const aiChoice = P => ({ provider: P.id, preset: S.preset, model: $('#model').value.trim() || undefined, plannerModel: P.agent ? undefined : $('#plannerModel').value.trim() || undefined });
 /* what the model gets: clean text for every page, plus an image of each figure page — or, at high fidelity, the PDF itself */
 const highFidelity = P => !P.agent && !!P.pdf && $('#fidelity').checked;
-const wantsImages = P => !P.agent && P.id !== 'mock' && !highFidelity(P) && $('#sendImages').checked;
+const wantsImages = P => P.id !== 'mock' && !highFidelity(P) && (P.agent || $('#sendImages').checked); // an agent gets its figures as input/fig-<n>.jpg
 /** Pages a..z as [{ n, text, figure, image? }]. A PDF page is scanned once (cached on `src`); the cleaning needs the whole range. */
 async function readRange(a, z) {
   if (src.kind !== 'pdf') return src.pages.slice(a - 1, z).map((p, i) => ({ n: a + i, text: p.text, figure: !!p.image, image: p.image }));
