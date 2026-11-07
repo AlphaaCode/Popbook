@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 process.env.POPBOOK_MOCK = '1'; // before providers.js is evaluated
-const { generate, BOOKS, outlineCap, spreadCap, loadPrompts } = await import('../lib/generate.js');
+const { generate, BOOKS, CACHE, outlineCap, spreadCap, loadPrompts } = await import('../lib/generate.js');
 const { BLOCKS, validateBook } = await import('../lib/validate.js');
 
 const EX = JSON.parse(await fs.readFile(new URL('../books/calcul-parallele/book.json', import.meta.url), 'utf8'));
@@ -15,7 +15,7 @@ const COVER = EX.spreads[0], BARS = EX.spreads[3]; // a network cover and a bars
 const OUTLINE = JSON.stringify({ title: EX.title, lang: 'fr', spreads: [{ kind: 'cover', pages: [1], block: 'network', intent: 'the course' }, { pages: [2], block: 'bars', intent: "Moore's law" }] });
 const slugs = [];
 const job = (provider, extra = {}) => { const slug = `test-gen-${process.pid}-${slugs.length}`; slugs.push(slug);
-  return { provider, slug, fileName: 'x.pdf', totalPages: 2, range: [1, 2], pages: [{ n: 1, text: 'Amdahl' }, { n: 2, text: 'Gustafson' }], lang: 'auto', ...extra }; };
+  return { provider, slug, fileName: 'x.pdf', totalPages: 2, range: [1, 2], pages: [{ n: 1, text: 'Amdahl' }, { n: 2, text: 'Gustafson' }], lang: 'auto', cache: false, ...extra }; };
 const fake = extra => job('compat', { baseUrl: base, model: 'm', ...extra });
 
 // A fake server that answers by task: reply(task, n) gives the n-th answer (0-based) to 'outline' or to spread k. Each answer reports
@@ -161,4 +161,20 @@ test('prompts: the core rules plus one file per API block', async () => {
   assert.deepEqual(Object.keys(p.blocks), BLOCKS.filter(b => b !== 'custom')); // custom scenes are for agents only
   for (const [b, spec] of Object.entries(p.blocks)) assert.ok(spec.startsWith('### `' + b + '`'), b);
   assert.match(p.core, /## 3\. The outline/);
+});
+
+test('result cache: the same pages again cost nothing, a changed model misses it', async () => {
+  const known = new Set(await fs.readdir(CACHE).catch(() => [])), pages = [{ n: 1, text: `cache test ${process.pid} ${Date.now()}` }, { n: 2, text: 'Gustafson' }];
+  try {
+    reply = answers([() => COVER, () => BARS]); sent = [];
+    const a = await generate(fake({ pages, cache: true }), () => {});
+    assert.equal(sent.length, 3);
+    sent = []; const lines = [], b = await generate(fake({ pages, cache: true }), m => lines.push(m));
+    assert.equal(sent.length, 0);
+    assert.deepEqual([b.source.calls, b.source.usage], [0, { input: 0, cachedInput: 0, output: 0, reasoning: 0 }]);
+    assert.deepEqual(b.spreads, a.spreads);
+    assert.ok(lines.filter(l => /from the result cache/.test(l)).length === 3 && lines.some(l => l.startsWith('Spread 2/2 ✓'))); // the studio's progress still counts it
+    sent = []; await generate(fake({ pages, cache: true, model: 'm2' }), () => {});
+    assert.equal(sent.length, 3);
+  } finally { for (const f of await fs.readdir(CACHE)) if (!known.has(f)) await fs.rm(path.join(CACHE, f)); }
 });
