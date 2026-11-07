@@ -43,9 +43,10 @@ export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir
     const { buf, count, to, pages } = await readPages(path.join(pdfDir, f), range[0], range[1]);
     for (const id of ids) {
       const P = PROVIDERS[id], mdl = model || P.model, slug = `eval-${slugify(f)}-${id}-${Date.now().toString(36)}`, lines = [];
-      const job = { provider: id, model: mdl, fileName: f, totalPages: count, range: [range[0], to], pages, pdfBase64: buf.toString('base64'), slug, lang: 'auto', pagesPerCall: 15, sendImages: false, extra: '', signal: AbortSignal.timeout(10 * 60 * 1000) };
-      const est = estimate({ system, pages, range: job.range, pagesPerCall: job.pagesPerCall, provider: id, model: mdl, caps: P, hasPdf: true, sendImages: false });
-      log(`▶ ${f} → ${id}:${mdl} (pages ${job.range.join('–')})…`);
+      const job = { provider: id, model: mdl, fileName: f, totalPages: count, range: [range[0], to], pages, pdfBase64: buf.toString('base64'), slug, lang: 'auto', pagesPerCall: 15, sendImages: true, extra: '', signal: AbortSignal.timeout(10 * 60 * 1000) };
+      const est = estimate({ system, pages, range: job.range, pagesPerCall: job.pagesPerCall, provider: id, model: mdl, caps: P, hasPdf: true, sendImages: true });
+      const figs = pages.filter(p => p.image).length;
+      log(`▶ ${f} → ${id}:${mdl} (pages ${job.range.join('–')}, ${figs} as images)…`);
       const t0 = Date.now(); let book = null, err = null;
       try { book = await generate(job, m => lines.push(m)); } catch (e) { err = e; }
       const s = book?.source || err?.stats || {}, u = s.usage;

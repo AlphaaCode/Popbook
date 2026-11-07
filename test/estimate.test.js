@@ -27,15 +27,16 @@ test('estimate: one call per batch, the system prompt is paid every time', () =>
   assert.ok(e.output > 0);
 });
 
-test('estimate: native PDF and page images add tokens only when they are really sent', () => {
+test('estimate: figure images by default, the native PDF only at high fidelity', () => {
   const text = estimate(base).input;
-  const pdf = estimate({ ...base, caps: { pdf: true }, hasPdf: true }).input;
-  assert.ok(pdf > text);
-  assert.equal(estimate({ ...base, caps: { pdf: true }, hasPdf: true, sendPdf: false }).input, text); // pdf switched off, no images capability
   const img = estimate({ ...base, caps: { images: true } }).input;
-  assert.ok(img > text); // only the 10 pages flagged with an image
+  assert.ok(img > text); // only the 10 figure pages
   assert.equal(estimate({ ...base, caps: { images: true }, sendImages: false }).input, text);
-  assert.equal(estimate({ ...base, caps: { images: true, pdf: true }, hasPdf: true }).input, estimate({ ...base, caps: { pdf: true }, hasPdf: true }).input); // pdf wins over images, like generate()
+  const both = { ...base, caps: { images: true, pdf: true }, hasPdf: true };
+  assert.equal(estimate(both).input, img); // a PDF is not sent unless asked for
+  const pdf = estimate({ ...both, fidelity: 'high' }).input;
+  assert.ok(pdf > img); // and then it replaces the images
+  assert.equal(estimate({ ...base, caps: { pdf: true }, fidelity: 'high' }).input, text); // notes or photos: no PDF to send
 });
 
 test('estimate: models that think by default are charged for it', () => {

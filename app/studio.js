@@ -1,6 +1,7 @@
 // PopBook Studio front-end: pick a lesson, connect an AI, follow the build, browse the library.
 import * as pdfjs from '/vendor/pdfjs/pdf.mjs';
 pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.mjs';
+import { scanPage, cleanPages, renderPage } from '/lib/pages.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -92,7 +93,7 @@ fromEl.onchange = toEl.onchange = markRange;
 /* 2 · the AI                                                          */
 /* ------------------------------------------------------------------ */
 let providers = [];
-const S = store.get('studio', {}); S.models ||= {}; S.baseUrls ||= {}; S.images ||= {};
+const S = store.get('studio', {}); S.models ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {};
 const provSel = $('#provider');
 const prov = () => providers.find(p => p.id === provSel.value);
 const saveSettings = () => store.set('studio', S);
@@ -114,7 +115,8 @@ function onProvider() {
   $('#baseUrl').value = S.baseUrls[P.id] || P.baseUrl || '';
   $('#apiKey').value = store.get('key:' + P.id, ''); $('#rememberKey').checked = !!store.get('key:' + P.id, '');
   $('#apiKey').placeholder = P.id === 'compat' ? 'optional (Ollama / LM Studio need none)' : 'paste a key, or put it in .env';
-  $('#sendImages').checked = S.images[P.id] ?? P.images; $('#sendImages').closest('.field').hidden = P.agent || isMock || P.pdf;
+  $('#sendImages').checked = S.images[P.id] ?? P.images; $('#sendImages').closest('.field').hidden = P.agent || isMock;
+  $('#fidelity').checked = !!S.hifi[P.id]; $('#fidelityField').hidden = !P.pdf;
   const hint = $('#provHint'), keyState = $('#keyState');
   keyState.textContent = P.hasKey && P.needsKey ? '· key found in .env ✓' : '';
   hint.className = 'hint';
@@ -125,29 +127,36 @@ function onProvider() {
   refreshGo();
 }
 provSel.onchange = onProvider;
-$('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); };
+$('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
-$('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); };
-for (const id of ['lang', 'per', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); });
+$('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
+$('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
+for (const id of ['lang', 'per', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); if (id === 'per') refreshGo(); });
 const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
-/* pre-flight estimate of tokens and cost: the server counts them; each page's text is read once and cached on `src` */
+/* what the model gets: clean text for every page, plus an image of each figure page — or, at high fidelity, the PDF itself */
+const highFidelity = P => !P.agent && !!P.pdf && $('#fidelity').checked;
+const wantsImages = P => !P.agent && P.id !== 'mock' && !highFidelity(P) && $('#sendImages').checked;
+/** Pages a..z as [{ n, text, figure, image? }]. A PDF page is scanned once (cached on `src`); the cleaning needs the whole range. */
+async function readRange(a, z) {
+  if (src.kind !== 'pdf') return src.pages.slice(a - 1, z).map((p, i) => ({ n: a + i, text: p.text, figure: !!p.image, image: p.image }));
+  const scans = (src.scans ||= new Map());
+  for (let n = a; n <= z; n++) if (!scans.has(n)) scans.set(n, await scanPage(await src.doc.getPage(n), pdfjs.OPS));
+  return cleanPages(Array.from({ length: z - a + 1 }, (_, i) => scans.get(a + i)));
+}
+
+/* pre-flight estimate of tokens and cost: the server counts them */
 let estText = '', estTimer = 0, estSeq = 0;
 const kTok = n => n >= 1000 ? Math.round(n / 1000) + 'k' : String(n);
-const wantsImages = P => !P.agent && P.id !== 'mock' && !P.pdf && $('#sendImages').checked;
 function scheduleEstimate() {
   clearTimeout(estTimer); estText = ''; const P = prov();
   if (!src || !P || P.agent || running) return;
   const seq = ++estSeq;
   estTimer = setTimeout(async () => {
     try {
-      const [a, z] = clampRange(), images = wantsImages(P), pages = [], texts = (src.texts ||= new Map());
-      for (let n = a; n <= z; n++) {
-        if (src.kind === 'pdf') { if (!texts.has(n)) texts.set(n, await pageText(await src.doc.getPage(n))); pages.push({ n, text: texts.get(n), image: images }); }
-        else pages.push({ n, text: src.pages[n - 1].text, image: !!src.pages[n - 1].image });
-      }
-      const body = { provider: P.id, model: $('#model').value.trim() || undefined, range: [a, z], pagesPerCall: +$('#per').value || 15, pages, hasPdf: src.kind === 'pdf', sendImages: images };
+      const [a, z] = clampRange(), pages = (await readRange(a, z)).map(p => ({ n: p.n, text: p.text, image: p.figure }));
+      const body = { provider: P.id, model: $('#model').value.trim() || undefined, range: [a, z], pagesPerCall: +$('#per').value || 15, pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
       const e = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
       if (seq !== estSeq || !e) return; // the settings changed meanwhile, or this is an agent
       estText = ` · estimate: ${e.calls} call${e.calls > 1 ? 's' : ''}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
@@ -176,9 +185,6 @@ const logEl = $('#log');
 function log(line) { const div = document.createElement('div'); div.textContent = line; if (/ERROR|invalid book/i.test(line)) div.className = 'err'; else if (/warning/i.test(line)) div.className = 'warn'; logEl.append(div); logEl.scrollTop = logEl.scrollHeight; }
 function setBar(p) { const bar = $('.bar'); bar.classList.toggle('indet', p === null); if (p !== null) $('#barFill').style.width = Math.round(p * 100) + '%'; }
 
-async function pageText(page) { const tc = await page.getTextContent(); return tc.items.map(i => (i.str || '') + (i.hasEOL ? '\n' : '')).join('').replace(/[ \t]+\n/g, '\n').trim(); }
-async function pageImage(page) { const vp = page.getViewport({ scale: 1 }); const v = page.getViewport({ scale: Math.min(2.5, 1200 / vp.width) }); const c = document.createElement('canvas'); c.width = v.width; c.height = v.height;
-  await page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise; return c.toDataURL('image/jpeg', 0.78); }
 function b64(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 
 $('#go').onclick = async () => {
@@ -187,16 +193,17 @@ $('#go').onclick = async () => {
   const card = $('#progress'); card.hidden = false; card.classList.remove('failed'); $('#doneRow').hidden = true; $('#cancel').hidden = false;
   logEl.innerHTML = ''; setBar(0.02); $('#jobTitle').textContent = '· ' + src.name; card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
-    const wantImages = wantsImages(P);
-    const pages = [];
+    const wantImages = wantsImages(P), hifi = highFidelity(P), pages = [];
     if (src.kind === 'pdf') {
-      log(`Reading pages ${a}–${z}${wantImages ? ' and rendering page images' : ''}…`);
-      for (let n = a; n <= z; n++) { const page = await src.doc.getPage(n); pages.push({ n, text: await pageText(page), image: wantImages ? await pageImage(page) : undefined }); setBar(0.02 + 0.08 * (n - a + 1) / (z - a + 1)); }
-      const empty = pages.filter(p => !p.text).length; if (empty) log(`  ${empty} page(s) have no extractable text (scans?) — the model will rely on the PDF or images.`);
-    } else for (let n = a; n <= z; n++) { const p = src.pages[n - 1]; pages.push({ n, text: p.text, image: p.image }); }
+      log(`Reading pages ${a}–${z}…`);
+      const read = await readRange(a, z), figs = read.filter(p => p.figure).map(p => p.n);
+      log(hifi ? '  high fidelity: the model gets the PDF pages themselves' : figs.length ? `  figures, tables or scans on page(s) ${figs.join(', ')}${wantImages ? ' — sent as images' : ' — images are off: the model gets their text only'}` : '  no figures found: text only');
+      for (const [i, p] of read.entries()) { pages.push({ n: p.n, text: p.text, image: wantImages && p.figure ? await renderPage(await src.doc.getPage(p.n), src.doc.canvasFactory) : undefined }); setBar(0.02 + 0.08 * (i + 1) / read.length); }
+      const empty = pages.filter(p => !p.text).length; if (empty && !hifi && !wantImages) log(`  ${empty} page(s) have no extractable text (scans?) and images are off: the model will not see them.`);
+    } else for (const p of await readRange(a, z)) pages.push({ n: p.n, text: p.text, image: p.image });
     const body = { provider: P.id, model: $('#model').value.trim() || undefined, baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
       fileName: src.name, totalPages: src.count, range: [a, z], pages, pdfBase64: src.kind === 'pdf' ? b64(src.buf) : undefined,
-      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, pagesPerCall: +$('#per').value || 15, sendImages: wantImages, extra: $('#extra').value.trim() };
+      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, pagesPerCall: +$('#per').value || 15, sendImages: wantImages, fidelity: hifi ? 'high' : undefined, extra: $('#extra').value.trim() };
     log('Uploading to the local server…');
     const res = await fetch('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);

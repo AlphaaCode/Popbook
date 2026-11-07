@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { PDFDocument } from 'pdf-lib';
 process.env.POPBOOK_MOCK = '1'; // before providers.js is evaluated
 const { generate, BOOKS } = await import('../lib/generate.js');
 
@@ -12,14 +13,18 @@ const slugs = [];
 const job = (provider, extra = {}) => { const slug = `test-gen-${process.pid}-${slugs.length}`; slugs.push(slug);
   return { provider, slug, fileName: 'x.pdf', totalPages: 2, range: [1, 2], pages: [{ n: 1, text: 'Amdahl' }, { n: 2, text: 'Gustafson' }], lang: 'auto', ...extra }; };
 
-// a fake server whose k-th answer comes from `answers[k]`; each one reports usage like the real API does
-let server, base, answers = [], calls = 0;
+// a fake server whose k-th answer comes from `answers[k]` (OpenAI or Anthropic stream, by path); each one reports usage like the
+// real API does, and every request body is kept in `sent`
+let server, base, answers = [], calls = 0, sent = [];
+const sse = evs => evs.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
 before(async () => {
-  server = http.createServer((req, res) => { req.resume(); req.on('end', () => {
+  server = http.createServer((req, res) => { let body = ''; req.on('data', c => body += c); req.on('end', () => {
+    sent.push(JSON.parse(body));
     const text = answers[Math.min(calls++, answers.length - 1)];
     res.writeHead(200, { 'content-type': 'text/event-stream' });
-    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}\n\n`);
-    res.end(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 1000, completion_tokens: 200, prompt_tokens_details: { cached_tokens: 100 } } })}\n\ndata: [DONE]\n\n`);
+    if (req.url.startsWith('/v1/messages')) return res.end(sse([{ type: 'message_start', message: { usage: { input_tokens: 1000, output_tokens: 1 } } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text } }, { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 200 } }]));
+    res.end(sse([{ choices: [{ delta: { content: text }, finish_reason: 'stop' }] }, { choices: [], usage: { prompt_tokens: 1000, completion_tokens: 200, prompt_tokens_details: { cached_tokens: 100 } } }]) + 'data: [DONE]\n\n');
   }); }).listen(0, '127.0.0.1');
   await new Promise(r => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -55,4 +60,18 @@ test('a run that never validates still reports what it spent', async () => {
     assert.deepEqual(e.stats, { usage: { input: 3000, cachedInput: 300, output: 600, reasoning: 0 }, calls: 3, repairs: 2 });
     return true;
   });
+});
+
+test('input: text plus images of the figure pages; the native PDF only at high fidelity', async () => {
+  const pdf = await PDFDocument.create(); pdf.addPage(); pdf.addPage();
+  const pdfBase64 = Buffer.from(await pdf.save()).toString('base64'), image = 'data:image/jpeg;base64,/9j/';
+  const pages = [{ n: 1, text: 'Amdahl' }, { n: 2, text: '', image }];
+  const media = () => sent.at(-1).messages[0].content.map(c => c.type).filter(t => t !== 'text');
+  answers = [EXAMPLE];
+  await generate(job('anthropic', { baseUrl: base, apiKey: 'k', pdfBase64, pages }), () => {});
+  assert.deepEqual(media(), ['image']); // page 2 only, no PDF
+  await generate(job('anthropic', { baseUrl: base, apiKey: 'k', pdfBase64, pages, fidelity: 'high' }), () => {});
+  assert.deepEqual(media(), ['document']);
+  await generate(job('anthropic', { baseUrl: base, apiKey: 'k', pdfBase64, pages, sendImages: false }), () => {});
+  assert.deepEqual(media(), []);
 });

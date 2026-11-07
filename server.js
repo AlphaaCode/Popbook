@@ -41,7 +41,7 @@ async function api(req, res, url) {
     const b = JSON.parse(await readBody(req)); const P = PROVIDERS[b.provider];
     if (!P || P.agent || !Array.isArray(b.pages) || !Array.isArray(b.range)) return send(res, 200, null); // agents report their usage after the run
     const pages = b.pages.filter(p => p && Number.isInteger(p.n)).map(p => ({ n: p.n, text: String(p.text || ''), image: !!p.image }));
-    return send(res, 200, estimate({ system: await systemPrompt(), pages, range: b.range, pagesPerCall: b.pagesPerCall, provider: b.provider, model: b.model || P.model, caps: P, hasPdf: !!b.hasPdf, sendImages: b.sendImages }));
+    return send(res, 200, estimate({ system: await systemPrompt(), pages, range: b.range, pagesPerCall: b.pagesPerCall, provider: b.provider, model: b.model || P.model, caps: P, hasPdf: !!b.hasPdf, fidelity: b.fidelity, sendImages: b.sendImages }));
   }
   if (p === '/api/generate' && req.method === 'POST') {
     const body = JSON.parse(await readBody(req));

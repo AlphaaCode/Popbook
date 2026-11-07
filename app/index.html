@@ -60,7 +60,8 @@
           <select id="lang"><option value="auto">Same as the source</option><option value="en">English</option><option value="fr">Français</option><option value="ar">العربية</option><option value="es">Español</option><option value="de">Deutsch</option><option value="it">Italiano</option><option value="pt">Português</option><option value="tr">Türkçe</option></select></div>
         <div class="field"><label for="slug">Book folder name</label><input id="slug" placeholder="auto from file name"></div>
         <div class="field"><label for="per">Pages per AI call</label><input id="per" type="number" min="3" max="40" value="15"></div>
-        <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="sendImages" checked> send page images (diagrams, tables)</label></div>
+        <div class="field"><label class="check" style="margin-top:22px"><input type="checkbox" id="sendImages" checked> send images of the pages with figures or tables</label>
+          <label class="check" id="fidelityField"><input type="checkbox" id="fidelity"> high fidelity: send the PDF itself (scans, heavy maths — more tokens)</label></div>
       </div>
       <div class="field"><label for="extra">Extra instructions <span class="muted">(optional)</span></label>
         <textarea id="extra" rows="3" placeholder="e.g. Students are 2nd-year biology. Prefer 'race' and 'plot' models. Make quizzes harder."></textarea></div>
