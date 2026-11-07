@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countTokens, planBatches, estimate } from '../lib/estimate.js';
+import { countTokens, estimate } from '../lib/estimate.js';
 import { costOf, priceOf } from '../lib/models.js';
 
 test('countTokens copes with special-token text', () => {
@@ -9,42 +9,39 @@ test('countTokens copes with special-token text', () => {
   assert.equal(countTokens(undefined), 0);
 });
 
-test('planBatches splits like generate() and never goes below 3 pages per call', () => {
-  assert.deepEqual(planBatches(1, 40, 15), [[1, 15], [16, 30], [31, 40]]);
-  assert.deepEqual(planBatches(1, 5, 1), [[1, 3], [4, 5]]);
-  assert.deepEqual(planBatches(7, 7), [[7, 7]]);
-});
-
 const pages = n => Array.from({ length: n }, (_, i) => ({ n: i + 1, text: 'word '.repeat(100), image: i % 2 === 0 }));
-const base = { system: 'rules '.repeat(50), pages: pages(20), range: [1, 20], pagesPerCall: 15, provider: 'gemini', model: 'gemini-4-argon' };
+const prompts = { core: 'rules '.repeat(500), blocks: { race: 'race '.repeat(100), flow: 'flow '.repeat(50) } };
+const base = { prompts, pages: pages(20), range: [1, 20], provider: 'gemini', model: 'gemini-4-argon' };
 
-test('estimate: one call per batch, the system prompt is paid every time', () => {
+test('estimate: one outline call plus one writer call per expected spread', () => {
   const e = estimate(base);
-  assert.equal(e.calls, 2);
-  assert.equal(e.perCall.length, 2);
-  assert.ok(e.perCall[0].input > e.perCall[1].input); // 15 pages vs 5 pages
-  assert.equal(e.input, e.perCall[0].input + e.perCall[1].input);
-  assert.ok(e.output > 0);
+  assert.equal(e.spreads, 12); // 0.6 per page
+  assert.equal(e.calls, 13);
+  assert.ok(e.input > 13 * countTokens(prompts.core)); // the rules go with every call (uncached: the upper bound)
+  assert.ok(estimate({ ...base, range: [1, 10] }).input < e.input / 1.5); // only the selected pages
+  assert.equal(estimate({ ...base, pages: pages(1), range: [1, 1] }).calls, 2);
 });
 
 test('estimate: figure images by default, the native PDF only at high fidelity', () => {
   const text = estimate(base).input;
   const img = estimate({ ...base, caps: { images: true } }).input;
-  assert.ok(img > text); // only the 10 figure pages
+  assert.equal(img - text, 10 * 580); // the 10 figure pages, once each (Gemini's medium resolution); pages with text skip the planner
   assert.equal(estimate({ ...base, caps: { images: true }, sendImages: false }).input, text);
   const both = { ...base, caps: { images: true, pdf: true }, hasPdf: true };
   assert.equal(estimate(both).input, img); // a PDF is not sent unless asked for
   const pdf = estimate({ ...both, fidelity: 'high' }).input;
   assert.ok(pdf > img); // and then it replaces the images
   assert.equal(estimate({ ...base, caps: { pdf: true }, fidelity: 'high' }).input, text); // notes or photos: no PDF to send
+  const blank = { ...base, pages: pages(20).map(p => ({ ...p, text: '' })), caps: { images: true } };
+  assert.ok(estimate(blank).input - estimate({ ...blank, caps: {} }).input === 2 * 10 * 580); // no text: the planner sees the images too
 });
 
 test('estimate: models that think by default are charged for it', () => {
   const g = estimate(base), a = estimate({ ...base, provider: 'anthropic', model: 'claude-opus-5-5' });
   assert.ok(g.reasoning > 0 && a.reasoning === 0);
   assert.ok(g.output > a.output);
-  assert.equal(estimate({ ...base, model: 'gemini-3.8-flash' }).reasoning, 2 * 1024); // its thinking budget, once per call
-  assert.ok(estimate({ ...base, model: 'gemini-9-unlisted' }).reasoning > 2 * 1024); // no budget: the measured default ratio
+  assert.equal(estimate({ ...base, model: 'gemini-3.8-flash' }).reasoning, 13 * 1024); // its thinking budget, once per call
+  assert.ok(estimate({ ...base, model: 'gemini-9-unlisted' }).reasoning > 0); // no budget: the measured default ratio
 });
 
 test('cost: priced models only, cache hits are cheaper', () => {

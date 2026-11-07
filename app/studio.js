@@ -103,7 +103,7 @@ async function loadConfig() {
   providers = cfg.providers;
   provSel.innerHTML = providers.map(p => `<option value="${p.id}">${esc(p.label)}${p.agent && !p.available ? ' — not installed' : ''}</option>`).join('');
   provSel.value = providers.some(p => p.id === S.provider) ? S.provider : cfg.defaultProvider;
-  for (const id of ['lang', 'per', 'extra']) if (S[id] !== undefined) $('#' + id).value = S[id];
+  for (const id of ['lang', 'extra']) if (S[id] !== undefined) $('#' + id).value = S[id];
   onProvider();
 }
 function onProvider() {
@@ -131,7 +131,7 @@ $('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); sa
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
 $('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
 $('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
-for (const id of ['lang', 'per', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); if (id === 'per') refreshGo(); });
+for (const id of ['lang', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); });
 const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
@@ -156,7 +156,7 @@ function scheduleEstimate() {
   estTimer = setTimeout(async () => {
     try {
       const [a, z] = clampRange(), pages = (await readRange(a, z)).map(p => ({ n: p.n, text: p.text, image: p.figure }));
-      const body = { provider: P.id, model: $('#model').value.trim() || undefined, range: [a, z], pagesPerCall: +$('#per').value || 15, pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
+      const body = { provider: P.id, model: $('#model').value.trim() || undefined, range: [a, z], pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
       const e = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
       if (seq !== estSeq || !e) return; // the settings changed meanwhile, or this is an agent
       estText = ` · estimate: ${e.calls} call${e.calls > 1 ? 's' : ''}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
@@ -203,20 +203,25 @@ $('#go').onclick = async () => {
     } else for (const p of await readRange(a, z)) pages.push({ n: p.n, text: p.text, image: p.image });
     const body = { provider: P.id, model: $('#model').value.trim() || undefined, baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
       fileName: src.name, totalPages: src.count, range: [a, z], pages, pdfBase64: src.kind === 'pdf' ? b64(src.buf) : undefined,
-      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, pagesPerCall: +$('#per').value || 15, sendImages: wantImages, fidelity: hifi ? 'high' : undefined, extra: $('#extra').value.trim() };
+      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, sendImages: wantImages, fidelity: hifi ? 'high' : undefined, extra: $('#extra').value.trim() };
     log('Uploading to the local server…');
     const res = await fetch('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);
     jobId = j.id; await follow(j.id, P);
   } catch (e) { log('ERROR: ' + e.message); fail(); }
 };
+/** Progress of an API build from its log: the outline is the first 15 %, then each finished spread (✓, or ⚠ when code wrote it). */
+function apiProgress(text) {
+  const m = /Outline: .*?(\d+) spreads/.exec(text); if (!m) return 0.1 + (/Outline → /.test(text) ? 0.05 : 0);
+  return 0.25 + 0.73 * (text.match(/Spread \d+\/\d+ [✓⚠]/g) || []).length / +m[1]; // the log's lines, joined
+}
 async function follow(id, P) {
   let since = 0;
   setBar(P.agent ? null : 0.1);
   for (;;) {
     const r = await fetch(`/api/jobs/${id}?since=${since}`).then(r => r.json());
     r.log.forEach(log); since = r.next;
-    if (!P.agent) { const m = [...logEl.textContent.matchAll(/Batch (\d+)\/(\d+)/g)].pop(); if (m) { const [i, n] = [+m[1], +m[2]]; const got = /answer received[^\n]*$/.test(logEl.lastChild?.textContent || ''); setBar(0.1 + 0.85 * ((i - 1) + (got ? 0.9 : 0.3)) / n); } }
+    if (!P.agent) setBar(apiProgress(logEl.textContent));
     if (r.status === 'done') { setBar(1); $('#cancel').hidden = true; $('#openBook').href = `/viewer/?book=${encodeURIComponent(r.slug)}`; $('#exportBook').href = `/api/books/${encodeURIComponent(r.slug)}/export`; $('#doneRow').hidden = false; running = false; refreshGo(); loadBooks(); return; }
     if (r.status === 'error') { fail(); return; }
     await new Promise(res => setTimeout(res, 900));

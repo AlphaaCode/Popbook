@@ -27,7 +27,7 @@ export async function readPages(file, from, to) {
 export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir = path.join(ROOT, 'eval'), providers, model, range = [1, 10], only, keep = false, log = console.log } = {}) {
   process.env.POPBOOK_MOCK = '1'; // the mock provider is only ever used when asked for
   const { PROVIDERS } = await import('../lib/providers.js');
-  const { generate, systemPrompt, slugify, BOOKS } = await import('../lib/generate.js');
+  const { generate, loadPrompts, slugify, BOOKS } = await import('../lib/generate.js');
   const { estimate } = await import('../lib/estimate.js');
   const { costOf } = await import('../lib/models.js');
 
@@ -37,14 +37,14 @@ export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir
   const files = (await fs.readdir(pdfDir)).filter(f => /\.pdf$/i.test(f) && (!only || f.toLowerCase().includes(only.toLowerCase()))).sort();
   if (!files.length) throw new Error(`No PDF in ${path.relative(ROOT, pdfDir)} (add 2–3 course PDFs there)`);
   await fs.mkdir(path.join(outDir, 'out'), { recursive: true });
-  const system = await systemPrompt(), rows = [];
+  const prompts = await loadPrompts(), rows = [];
 
   for (const f of files) {
     const { buf, count, to, pages } = await readPages(path.join(pdfDir, f), range[0], range[1]);
     for (const id of ids) {
       const P = PROVIDERS[id], mdl = model || P.model, slug = `eval-${slugify(f)}-${id}-${Date.now().toString(36)}`, lines = [];
-      const job = { provider: id, model: mdl, fileName: f, totalPages: count, range: [range[0], to], pages, pdfBase64: buf.toString('base64'), slug, lang: 'auto', pagesPerCall: 15, sendImages: true, extra: '', signal: AbortSignal.timeout(10 * 60 * 1000) };
-      const est = estimate({ system, pages, range: job.range, pagesPerCall: job.pagesPerCall, provider: id, model: mdl, caps: P, hasPdf: true, sendImages: true });
+      const job = { provider: id, model: mdl, fileName: f, totalPages: count, range: [range[0], to], pages, pdfBase64: buf.toString('base64'), slug, lang: 'auto', sendImages: true, extra: '', signal: AbortSignal.timeout(10 * 60 * 1000) };
+      const est = estimate({ prompts, pages, range: job.range, provider: id, model: mdl, caps: P, hasPdf: true, sendImages: true });
       const figs = pages.filter(p => p.image).length;
       log(`▶ ${f} → ${id}:${mdl} (pages ${job.range.join('–')}, ${figs} as images)…`);
       const t0 = Date.now(); let book = null, err = null;
@@ -56,7 +56,7 @@ export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir
       rows.push(row);
       if (book) await fs.copyFile(path.join(BOOKS, slug, 'book.json'), path.join(outDir, 'out', `${slugify(f)}__${id}.json`));
       if (!keep) await fs.rm(path.join(BOOKS, slug), { recursive: true, force: true });
-      lines.filter(l => /invalid book|did not return JSON|cut off|output-token limit/.test(l)).forEach(l => log('    ' + l.trim().slice(0, 300))); // why a try was rejected
+      lines.filter(l => /invalid|did not return JSON|cut off|output-token limit|⚠/.test(l)).forEach(l => log('    ' + l.trim().slice(0, 300))); // why a try was rejected
       log(err ? `  ✗ ${row.error}` : `  ✓ ${row.spreads} spreads, ${row.validFirstTry ? 'valid first try' : row.repairs + ' repair(s)'}, in ${row.inputTokens} / out ${row.outputTokens} tokens${row.cost === '' ? '' : `, $${row.cost}`}, ${row.seconds} s`);
     }
   }
