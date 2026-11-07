@@ -47,7 +47,7 @@ every scene block. Open them from *Your books* or directly at
 ## How it works
 
 The AI never writes 3D code. It writes one file, `book.json`, in a strict format
-([`prompts/system.md`](prompts/system.md) is exactly what the model reads). A hand-written engine renders any valid
+([`prompts/core.md`](prompts/core.md) and one [`prompts/blocks/<name>.md`](prompts/blocks) per scene block are exactly what the model reads). A hand-written engine renders any valid
 book, so results stay reliable even with small models.
 
 ```
@@ -107,7 +107,7 @@ Or ask any coding agent to "follow AGENTS.md to make a pop-up book from lesson.p
 
 ```bash
 node tools/pdf2pages.mjs lesson.pdf --pages 1-10 --out books/my-lesson   # text per page + source.pdf
-# write books/my-lesson/book.json following prompts/system.md
+# write books/my-lesson/book.json following prompts/core.md and prompts/blocks/
 node tools/check.mjs books/my-lesson                                     # repeat until OK
 open http://localhost:5173/viewer/?book=my-lesson
 ```
@@ -142,8 +142,8 @@ Model expressions (`expr`, `when`) use a small safe evaluator ([`lib/expr.js`](l
    clickable meshes, and call `ctx.touch(id)` for every stamp target.
 2. **Validator:** add the name to `BLOCKS` in [`lib/validate.js`](lib/validate.js), normalize its fields in the
    `switch`, and return its target ids from `sceneTargets()`.
-3. **Prompt:** document it in [`prompts/system.md`](prompts/system.md), with a JSON example, limits, interactive ids
-   and a row in the "idea → block" table. Models only use what is documented there.
+3. **Prompt:** document it in `prompts/blocks/<name>.md`, with a JSON example, limits and interactive ids, and add a
+   row to the "idea → block" table in [`prompts/core.md`](prompts/core.md). Models only use what is documented there.
 4. **Demo + test:** add a spread to `books/blocks-demo/book.json`, then run `npm test` and open the spread in the
    viewer.
 
@@ -180,7 +180,7 @@ server.js           local server (no framework), 127.0.0.1:5173, proxies all AI 
 app/                the studio
 viewer/             engine.js (book, camera, page turn, left page), blocks.js, kit.js, i18n.js
 lib/                validate.js, expr.js, providers.js, generate.js, export.js, env.js
-prompts/system.md   the instructions given to the model
+prompts/            core.md (the rules) and blocks/<name>.md (one scene block each): what the model reads
 books/<slug>/       book.json, source.pdf, pages/, scenes/ (custom, agent mode)
 tools/              check.mjs, pdf2pages.mjs, export.mjs
 ```

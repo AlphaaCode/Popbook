@@ -45,7 +45,7 @@ test('normalizes ids, dir and defaults', () => {
   assert.deepEqual(v.book.spreads[0].targets, ['meteo', 'meteo-2']);
 });
 
-test('what prompts/system.md marks optional is filled in: short, kind, dir, ids, targets, block defaults', () => {
+test('what prompts/core.md marks optional is filled in: short, kind, dir, ids, targets, block defaults', () => {
   const minimal = { title: 'T', lang: 'ar', spreads: [
     { title: 'Architecture et calcul parallèles', concept: 'C.', formula: { eq: 'S = 1/s' }, vocab: [['a', 'b']], quiz: { q: 'Q?', opts: ['x', 'y'], a: 0 }, why: 'W.',
       scene: { type: 'flow', steps: [{ label: 'Read data' }, { label: 'Compute' }] } },

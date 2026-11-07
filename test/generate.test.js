@@ -6,7 +6,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 process.env.POPBOOK_MOCK = '1'; // before providers.js is evaluated
-const { generate, BOOKS, outputCap } = await import('../lib/generate.js');
+const { generate, BOOKS, outputCap, loadPrompts, assemble, systemPrompt } = await import('../lib/generate.js');
+const { BLOCKS } = await import('../lib/validate.js');
 
 const EXAMPLE = await fs.readFile(new URL('../books/calcul-parallele/book.json', import.meta.url), 'utf8');
 const slugs = [];
@@ -109,4 +110,13 @@ test('input: text plus images of the figure pages; the native PDF only at high f
   assert.deepEqual(media(), ['document']);
   await generate(job('anthropic', { baseUrl: base, apiKey: 'k', pdfBase64, pages, sendImages: false }), () => {});
   assert.deepEqual(media(), []);
+});
+
+test('prompts: the core rules plus one file per API block, assembled in a fixed order', async () => {
+  const p = await loadPrompts(), full = await systemPrompt();
+  assert.deepEqual(Object.keys(p.blocks), BLOCKS.filter(b => b !== 'custom')); // custom scenes are for agents only
+  for (const [b, spec] of Object.entries(p.blocks)) { assert.ok(spec.startsWith('### `' + b + '`'), b); assert.ok(full.includes(spec), b); }
+  assert.ok(full.startsWith(p.core) && !full.includes('### `custom`'));
+  const one = assemble(p, ['flow']);
+  assert.ok(one.includes(p.blocks.flow) && !one.includes(p.blocks.race));
 });

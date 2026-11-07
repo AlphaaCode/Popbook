@@ -47,8 +47,8 @@ Both must pass; CI runs them on Linux and Windows. Then:
 1. **Keep PRs focused.** One fix or feature per PR is much easier to review than a big mixed one.
 2. **Open the viewer** if you touched anything visual (`viewer/`, `books/`, `prompts/`), and attach a screenshot
    or short recording to the PR.
-3. **Update the docs** when behaviour changes: the README, and [`prompts/system.md`](prompts/system.md) if the book
-   format or a block changed (the model only knows what that file says).
+3. **Update the docs** when behaviour changes: the README, and [`prompts/core.md`](prompts/core.md) or `prompts/blocks/<name>.md`
+   if the book format or a block changed (the model only knows what those files say).
 4. **Add a line to [CHANGELOG.md](CHANGELOG.md)** under *Unreleased*.
 
 ## Adding a scene block
@@ -57,7 +57,7 @@ The README section *Adding a new block* has the details. In short, every block t
 
 1. `viewer/blocks.js` — the 3D model (use the helpers in `viewer/kit.js` so it matches the pen-and-ink look).
 2. `lib/validate.js` — validation, normalisation and stamp targets.
-3. `prompts/system.md` — documentation and a JSON example, so models can use it.
+3. `prompts/blocks/<name>.md` — documentation and a JSON example, plus a row in the table of `prompts/core.md`, so models can use it.
 4. `books/blocks-demo/book.json` — a demo spread, plus a test in `test/` if it adds logic.
 
 ## Adding an AI provider
