@@ -197,7 +197,7 @@ $('#go').onclick = async () => {
     if (src.kind === 'pdf') {
       log(`Reading pages ${a}–${z}…`);
       const read = await readRange(a, z), figs = read.filter(p => p.figure).map(p => p.n);
-      log(hifi ? '  high fidelity: the model gets the PDF pages themselves' : figs.length ? `  figures, tables or scans on page(s) ${figs.join(', ')}${wantImages ? ' — sent as images' : ' — images are off: the model gets their text only'}` : '  no figures found: text only');
+      log(hifi ? '  high fidelity: the model gets the PDF pages themselves' : figs.length ? `  figures, tables or scans on page(s) ${figs.join(', ')}${wantImages ? ' — sent as images' : P.id === 'mock' ? '' : ' — images are off: the model gets their text only'}` : '  no figures found: text only');
       for (const [i, p] of read.entries()) { pages.push({ n: p.n, text: p.text, image: wantImages && p.figure ? await renderPage(await src.doc.getPage(p.n), src.doc.canvasFactory) : undefined }); setBar(0.02 + 0.08 * (i + 1) / read.length); }
       const empty = pages.filter(p => !p.text).length; if (empty && !hifi && !wantImages) log(`  ${empty} page(s) have no extractable text (scans?) and images are off: the model will not see them.`);
     } else for (const p of await readRange(a, z)) pages.push({ n: p.n, text: p.text, image: p.image });
