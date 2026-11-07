@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Extracts the text of each PDF page into books/<slug>/pages/page-NNN.txt and copies the PDF to books/<slug>/source.pdf.
+// Extracts the clean text of each PDF page (lib/pages.js: no running headers/footers) into books/<slug>/pages/page-NNN.txt,
+// copies the PDF to books/<slug>/source.pdf and lists the pages with figures, tables or scans.
 // Usage: node tools/pdf2pages.mjs <file.pdf> [--pages 1-10] [--out books/<slug>]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { readPdfPages } from '../lib/pages.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -23,12 +25,9 @@ if (!(from <= to)) { console.error(`Bad page range "${range}" (the PDF has ${doc
 
 fs.mkdirSync(path.join(out, 'pages'), { recursive: true });
 if (path.resolve(file) !== path.join(out, 'source.pdf')) fs.writeFileSync(path.join(out, 'source.pdf'), data);
-let empty = 0;
-for (let n = from; n <= to; n++) {
-  const tc = await (await doc.getPage(n)).getTextContent();
-  const text = tc.items.map(i => (i.str || '') + (i.hasEOL ? '\n' : '')).join('').replace(/[ \t]+\n/g, '\n').trim();
-  if (!text) empty++;
-  fs.writeFileSync(path.join(out, 'pages', `page-${String(n).padStart(3, '0')}.txt`), text + '\n');
-}
+const pages = await readPdfPages(doc, from, to, OPS, { images: false });
+for (const p of pages) fs.writeFileSync(path.join(out, 'pages', `page-${String(p.n).padStart(3, '0')}.txt`), p.text + '\n');
+const empty = pages.filter(p => !p.text).length, figures = pages.filter(p => p.figure).map(p => p.n);
 console.log(`✓ ${to - from + 1} page(s) of ${doc.numPages} → ${path.relative(ROOT, out) || out}${path.sep}pages${path.sep}`);
 if (empty) console.log(`  ${empty} page(s) had no text layer (scanned?) — read source.pdf directly for those.`);
+if (figures.length) console.log(`  Figures, tables or scans on page(s) ${figures.join(', ')} — look at source.pdf for those.`);

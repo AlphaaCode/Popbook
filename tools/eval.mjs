@@ -3,8 +3,8 @@
 // Usage: npm run eval -- [--pages 1-10] [--providers gemini,anthropic] [--model <id>] [--pdf <name part>] [--keep] [--baseline]
 //   --providers mock   free dry run (the example book, no network)       --keep      also leave the books in books/
 //   --baseline         also copy the results to eval/baseline.csv        --pages     range of each PDF (default 1-10, the studio's default)
-// This runs the real pipeline on real pages and SPENDS REAL TOKENS. Pages are read like the studio does (text layer + the
-// PDF itself for providers that take PDFs); page images are not rendered here, so providers that need them get text only.
+// This runs the real pipeline on real pages and SPENDS REAL TOKENS. Pages are read like the studio reads them (lib/pages.js:
+// clean text for every page, a rendered image for each figure page).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -15,15 +15,12 @@ export const COLUMNS = ['date', 'pdf', 'pages', 'preset', 'model', 'validFirstTr
 export const csvLine = row => COLUMNS.map(c => { const v = String(row[c] ?? ''); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(',');
 
 export async function readPages(file, from, to) {
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { getDocument, OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { readPdfPages } = await import('../lib/pages.js');
   const buf = await fs.readFile(file);
   const doc = await getDocument({ data: new Uint8Array(buf), standardFontDataUrl: path.join(ROOT, 'node_modules/pdfjs-dist/standard_fonts/') + path.sep, verbosity: 0 }).promise;
-  to = Math.min(to, doc.numPages); const pages = [];
-  for (let n = from; n <= to; n++) {
-    const tc = await (await doc.getPage(n)).getTextContent();
-    pages.push({ n, text: tc.items.map(i => (i.str || '') + (i.hasEOL ? '\n' : '')).join('').replace(/[ \t]+\n/g, '\n').trim() });
-  }
-  return { buf, count: doc.numPages, to, pages };
+  to = Math.min(to, doc.numPages);
+  return { buf, count: doc.numPages, to, pages: await readPdfPages(doc, from, to, OPS) }; // like the studio: clean text, images of figure pages
 }
 
 /** Runs the eval; returns the result rows. `providers` defaults to every API provider with a key in the environment. */
