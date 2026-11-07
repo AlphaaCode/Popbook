@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { nearestBlock, fixSpread, fixOutline, fallbackSpread } from '../lib/autofix.js';
-import { validateSpread } from '../lib/validate.js';
+import { nearestBlock, fixSpread, fixOutline, fallbackSpread, API_BLOCKS } from '../lib/autofix.js';
+import { validateSpread, validateBook } from '../lib/validate.js';
 
 const demo = JSON.parse(await fs.readFile(new URL('../books/blocks-demo/book.json', import.meta.url), 'utf8'));
 const byType = t => structuredClone(demo.spreads.find(s => s.scene.type === t));
@@ -93,4 +93,16 @@ test('fallbackSpread keeps every valid part of the last attempt and flags only w
   const noQuiz = byType('flow'); noQuiz.quiz.a = 7; // a valid scene is kept too
   const t = fallbackSpread(outline, 2, text, noQuiz);
   assert.deepEqual(t.fallback, ['quiz']); assert.equal(t.scene.type, 'flow');
+});
+
+test('no answer shape makes autofix or validation throw: odd values become errors, which go to the repair ladder', () => {
+  const vals = [null, 1, 'x', true, [], [1], {}, ['a', 'b'], [[1, 2]], [null, null], [{}, {}, {}]];
+  const keys = ['title', 'concept', 'formula', 'vocab', 'quiz', 'why', 'fig', 'scene', 'spreads', 'spread'];
+  const sceneKeys = ['items', 'steps', 'levels', 'nodes', 'param', 'x', 'y', 'quantum', 'toggle', 'hub', 'tasks', 'outputs', 'messages', 'gauge', 'threshold', 'growth'];
+  for (const block of API_BLOCKS) for (const v of vals) {
+    const plan = { pages: [1], block, intent: 'i' }, param = { id: 'p', min: 0, max: 1 };
+    const raws = [...keys.map(k => ({ title: 'T', [k]: v, scene: { type: block } })), ...sceneKeys.flatMap(k => [{ title: 'T', scene: { type: block, [k]: v } }, { title: 'T', scene: { type: block, param, [k]: v } }])];
+    for (const raw of raws) assert.doesNotThrow(() => { validateSpread(fixSpread(structuredClone(raw), plan)); validateBook({ title: 'T', spreads: [raw] }); }, JSON.stringify(raw));
+  }
+  for (const v of vals) assert.doesNotThrow(() => fixOutline(v, [1]));
 });
