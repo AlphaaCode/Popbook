@@ -7,7 +7,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 process.env.POPBOOK_MOCK = '1'; // before providers.js is evaluated
-const { generate, regenerateSpread, BOOKS, CACHE, outlineCap, spreadCap, loadPrompts } = await import('../lib/generate.js');
+const { generate, regenerateSpread, roles, BOOKS, CACHE, outlineCap, spreadCap, loadPrompts } = await import('../lib/generate.js');
+delete process.env.PLANNER_MODEL; delete process.env.WRITER_MODEL; // a developer's shell must not reroute the tests
 const { BLOCKS, validateBook } = await import('../lib/validate.js');
 
 const EX = JSON.parse(await fs.readFile(new URL('../books/calcul-parallele/book.json', import.meta.url), 'utf8'));
@@ -122,21 +123,23 @@ test('an outline that never validates stops the run, and the run still reports w
   reply = () => '{"spreads":[]}'; sent = [];
   await assert.rejects(generate(fake(), () => {}), e => {
     assert.match(e.message, /valid outline after 3 attempts/);
-    assert.deepEqual(e.stats, { usage: { input: 3000, cachedInput: 300, output: 600, reasoning: 0 }, calls: 3, repairs: 2 });
+    assert.deepEqual(e.stats, { usage: { input: 3000, cachedInput: 300, output: 600, reasoning: 0 }, cost: null, calls: 3, repairs: 2 }); // a local model: no price
     return true;
   });
 });
 
 test('output caps: ~2 000 for a 10-page outline, 1 500 per spread, plus room to think', async () => {
-  assert.equal(outlineCap('anthropic', 'claude-opus-5-5', 10), 2000); // Claude does not think unasked
-  assert.equal(spreadCap('gemini', 'gemini-3.8-flash'), 1500 + 1024); // its thinking budget
-  assert.equal(spreadCap('openai', 'gpt-6-astra'), 1500 + 8000); // effort "low" has no fixed size
+  const g = roles({ provider: 'gemini', preset: 'balanced' });
+  assert.equal(outlineCap(roles({ provider: 'anthropic' }).planner, 10), 2000); // Claude does not think unasked
+  assert.equal(spreadCap(g.writer), 1500 + 1024); // gemini-3.8-flash: its low thinking budget
+  assert.equal(outlineCap(g.planner, 10), 2000 + 4096); // gemini-4-argon plans at medium
+  assert.equal(spreadCap(roles({ provider: 'openai' }).writer), 1500 + 8000); // an effort has no fixed size
   process.env.SPREAD_MAX_TOKENS = '1000';
-  try { assert.equal(spreadCap('anthropic', 'x'), 1000); } finally { delete process.env.SPREAD_MAX_TOKENS; }
+  try { assert.equal(spreadCap({ provider: 'anthropic', model: 'x' }), 1000); } finally { delete process.env.SPREAD_MAX_TOKENS; }
   reply = answers([() => COVER, () => BARS]); sent = [];
-  await generate(fake(), () => {});
-  assert.equal(of('outline')[0].body.max_tokens, outlineCap('compat', 'm', 2));
-  assert.equal(of(2)[0].body.max_tokens, spreadCap('compat', 'm'));
+  const j = fake(), r = roles(j); await generate(j, () => {});
+  assert.equal(of('outline')[0].body.max_tokens, outlineCap(r.planner, 2));
+  assert.equal(of(2)[0].body.max_tokens, spreadCap(r.writer));
 });
 
 test('input: text plus images of the figure pages; the planner sees only the pages without text; native PDF only at high fidelity', async () => {
@@ -175,7 +178,7 @@ test('result cache: the same pages again cost nothing, a changed model misses it
     assert.deepEqual(b.spreads, a.spreads);
     assert.ok(lines.filter(l => /from the result cache/.test(l)).length === 3 && lines.some(l => l.startsWith('Spread 2/2 ✓'))); // the studio's progress still counts it
     sent = []; await generate(fake({ pages, cache: true, model: 'm2' }), () => {});
-    assert.equal(sent.length, 3);
+    assert.equal(sent.length, 2); // a new writer: both spreads again; the planner did not change, so its outline still holds
   } finally { for (const f of await fs.readdir(CACHE)) if (!known.has(f)) await fs.rm(path.join(CACHE, f)); }
 });
 
@@ -208,4 +211,30 @@ test('regenerate: one spread written again past the result cache, from the saved
     await assert.rejects(regenerateSpread({ slug: j.slug, index: 5 }, () => {}), /No spread 6/);
     await assert.rejects(regenerateSpread({ slug: 'calcul-parallele', index: 0 }, () => {}), /no outline\.json/);
   } finally { for (const f of await fs.readdir(CACHE)) if (!known.has(f)) await fs.rm(path.join(CACHE, f)); }
+});
+
+test('roles: the preset picks a tier per role, .env may route a role to another provider, the studio fields win', () => {
+  const r = (job, env = {}) => { Object.assign(process.env, env); try { const x = roles(job); return [x.planner.provider + ':' + x.planner.model, x.writer.provider + ':' + x.writer.model, x.preset.id]; } finally { for (const k in env) delete process.env[k]; } };
+  assert.deepEqual(r({ provider: 'gemini' }), ['gemini:gemini-4-argon', 'gemini:gemini-3.8-flash', 'balanced']); // the default preset
+  assert.deepEqual(r({ provider: 'gemini', preset: 'budget' }), ['gemini:gemini-3.8-flash', 'gemini:gemini-3.8-flash', 'budget']);
+  assert.deepEqual(r({ provider: 'anthropic', preset: 'best' }).slice(0, 2), ['anthropic:claude-opus-5-5', 'anthropic:claude-opus-5-5']);
+  assert.deepEqual(r({ provider: 'openai', preset: 'balanced' }).slice(0, 2), ['openai:gpt-6-astra', 'openai:gpt-6-astra']); // no cheaper sibling known
+  assert.deepEqual(r({ provider: 'gemini' }, { PLANNER_MODEL: 'claude-opus-5-5', WRITER_MODEL: 'compat:llama3:8b' }).slice(0, 2), ['anthropic:claude-opus-5-5', 'compat:llama3:8b']);
+  assert.deepEqual(r({ provider: 'compat', model: 'qwen3:4b', plannerModel: 'qwen3:32b' }, { WRITER_MODEL: 'gemini-3.8-flash' }).slice(0, 2), ['compat:qwen3:32b', 'compat:qwen3:4b']);
+  assert.deepEqual([roles({ provider: 'gemini', preset: 'best' }).writer.reasoning, roles({ provider: 'gemini' }).writer.reasoning], [{ budget: 4096 }, { budget: 1024 }]);
+});
+
+test('a role routed to another provider is called there; book.source records both roles', async () => {
+  reply = (task) => task === 'outline' ? OUTLINE : JSON.stringify(EX.spreads[task - 1]); sent = [];
+  process.env.PLANNER_MODEL = 'mock:mock';
+  try {
+    const book = await generate(fake(), () => {}); // compat writers, a mock planner (the example book's outline)
+    assert.equal(of('outline').length, 0); // the outline never reached the job's server
+    assert.equal(sent.length, EX.spreads.length); // its spreads did
+    assert.deepEqual([book.source.model, book.source.plannerModel], ['m', 'mock:mock']);
+  } finally { delete process.env.PLANNER_MODEL; }
+  reply = answers([() => COVER, () => BARS]); sent = [];
+  const book = await generate(fake({ model: 'w', plannerModel: 'p' }), () => {});
+  assert.deepEqual([book.source.model, book.source.plannerModel, book.source.preset], ['w', 'p', 'balanced']);
+  assert.deepEqual([of('outline')[0].body.model, of(1)[0].body.model], ['p', 'w']);
 });

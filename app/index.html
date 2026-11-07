@@ -44,8 +44,18 @@
       <select id="provider"></select>
       <p class="hint" id="provHint"></p>
     </div>
+    <div class="field" id="presetField">
+      <label for="preset">Goal</label>
+      <select id="preset">
+        <option value="budget">Budget — the cheap model for everything, page text only</option>
+        <option value="balanced">Balanced — a strong model plans, a cheap one writes each spread</option>
+        <option value="best">Best — the strong model for everything</option>
+      </select>
+      <p class="hint" id="presetHint"></p>
+    </div>
     <div class="grid2">
-      <div class="field" id="modelField"><label for="model">Model</label><input id="model" placeholder="default"></div>
+      <div class="field" id="plannerField"><label for="plannerModel">Planner model</label><input id="plannerModel" placeholder="preset"></div>
+      <div class="field" id="modelField"><label for="model" id="modelLabel">Writer model</label><input id="model" placeholder="default"></div>
       <div class="field" id="baseField"><label for="baseUrl">Base URL</label><input id="baseUrl" placeholder="http://localhost:11434/v1"></div>
     </div>
     <div class="field" id="keyField">

@@ -92,15 +92,16 @@ fromEl.onchange = toEl.onchange = markRange;
 /* ------------------------------------------------------------------ */
 /* 2 · the AI                                                          */
 /* ------------------------------------------------------------------ */
-let providers = [], blocks = [];
-const S = store.get('studio', {}); S.models ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {};
+let providers = [], blocks = [], presets = [];
+const preset = () => presets.find(p => p.id === S.preset) || {};
+const S = store.get('studio', {}); S.models ||= {}; S.plannerModels ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {}; S.preset ||= 'balanced';
 const provSel = $('#provider');
 const prov = () => providers.find(p => p.id === provSel.value);
 const saveSettings = () => store.set('studio', S);
 
 async function loadConfig() {
   const cfg = await fetch('/api/config').then(r => r.json());
-  providers = cfg.providers; blocks = cfg.blocks || [];
+  providers = cfg.providers; blocks = cfg.blocks || []; presets = cfg.presets || [];
   provSel.innerHTML = providers.map(p => `<option value="${p.id}">${esc(p.label)}${p.agent && !p.available ? ' — not installed' : ''}</option>`).join('');
   provSel.value = providers.some(p => p.id === S.provider) ? S.provider : cfg.defaultProvider;
   for (const id of ['lang', 'extra']) if (S[id] !== undefined) $('#' + id).value = S[id];
@@ -108,14 +109,19 @@ async function loadConfig() {
 }
 function onProvider() {
   const P = prov(); if (!P) return; S.provider = P.id; saveSettings();
-  const isMock = P.id === 'mock';
+  const isMock = P.id === 'mock', pm = P.presets?.[S.preset] || {};
   $('#modelField').hidden = isMock; $('#baseField').hidden = P.id !== 'compat';
   $('#keyField').hidden = P.agent || isMock;
-  $('#model').value = S.models[P.id] || ''; $('#model').placeholder = P.model || (P.agent ? 'agent default' : 'default');
+  $('#presetField').hidden = isMock; $('#preset').value = S.preset; $('#plannerField').hidden = P.agent || isMock;
+  $('#modelLabel').textContent = P.agent ? 'Model' : 'Writer model';
+  $('#model').value = S.models[P.id] || ''; $('#model').placeholder = pm.writer || P.model || (P.agent ? 'agent default' : 'default');
+  $('#plannerModel').value = S.plannerModels[P.id] || ''; $('#plannerModel').placeholder = pm.planner || P.model || 'default';
+  $('#presetHint').textContent = P.agent ? (pm.writer ? `Runs the agent with --model ${pm.writer}.` : 'This agent uses its own default model.')
+    : `${pm.planner} plans the book, ${pm.writer} writes each spread${preset().images ? '' : ', from the page text only'}.`;
   $('#baseUrl').value = S.baseUrls[P.id] || P.baseUrl || '';
   $('#apiKey').value = store.get('key:' + P.id, ''); $('#rememberKey').checked = !!store.get('key:' + P.id, '');
   $('#apiKey').placeholder = P.id === 'compat' ? 'optional (Ollama / LM Studio need none)' : 'paste a key, or put it in .env';
-  $('#sendImages').checked = S.images[P.id] ?? P.images; $('#sendImages').closest('.field').hidden = P.agent || isMock;
+  $('#sendImages').checked = S.images[P.id] ?? (P.images && !!preset().images); $('#sendImages').closest('.field').hidden = P.agent || isMock;
   $('#fidelity').checked = !!S.hifi[P.id]; $('#fidelityField').hidden = !P.pdf;
   $('#review').checked = !!S.review; $('#reviewField').hidden = P.agent; // agents write the whole book themselves
   const hint = $('#provHint'), keyState = $('#keyState');
@@ -129,6 +135,8 @@ function onProvider() {
 }
 provSel.onchange = onProvider;
 $('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
+$('#plannerModel').oninput = e => { S.plannerModels[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
+$('#preset').onchange = e => { S.preset = e.target.value; S.images = {}; onProvider(); }; // the preset decides images again
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
 $('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
 $('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
@@ -137,6 +145,8 @@ for (const id of ['lang', 'extra']) $('#' + id).addEventListener('input', e => {
 const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
+/** The AI settings of the form, as the server reads them (roles() in lib/generate.js). */
+const aiChoice = P => ({ provider: P.id, preset: S.preset, model: $('#model').value.trim() || undefined, plannerModel: P.agent ? undefined : $('#plannerModel').value.trim() || undefined });
 /* what the model gets: clean text for every page, plus an image of each figure page — or, at high fidelity, the PDF itself */
 const highFidelity = P => !P.agent && !!P.pdf && $('#fidelity').checked;
 const wantsImages = P => !P.agent && P.id !== 'mock' && !highFidelity(P) && $('#sendImages').checked;
@@ -158,7 +168,7 @@ function scheduleEstimate() {
   estTimer = setTimeout(async () => {
     try {
       const [a, z] = clampRange(), pages = (await readRange(a, z)).map(p => ({ n: p.n, text: p.text, image: p.figure }));
-      const body = { provider: P.id, model: $('#model').value.trim() || undefined, range: [a, z], pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
+      const body = { ...aiChoice(P), range: [a, z], pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
       const e = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
       if (seq !== estSeq || !e) return; // the settings changed meanwhile, or this is an agent
       estText = ` · estimate: ${e.calls} call${e.calls > 1 ? 's' : ''}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
@@ -206,7 +216,7 @@ $('#go').onclick = async () => {
       for (const [i, p] of read.entries()) { pages.push({ n: p.n, text: p.text, image: wantImages && p.figure ? await renderPage(await src.doc.getPage(p.n), src.doc.canvasFactory) : undefined }); setBar(0.02 + 0.08 * (i + 1) / read.length); }
       const empty = pages.filter(p => !p.text).length; if (empty && !hifi && !wantImages) log(`  ${empty} page(s) have no extractable text (scans?) and images are off: the model will not see them.`);
     } else for (const p of await readRange(a, z)) pages.push({ n: p.n, text: p.text, image: p.image });
-    const body = { provider: P.id, model: $('#model').value.trim() || undefined, baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
+    const body = { ...aiChoice(P), baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
       fileName: src.name, totalPages: src.count, range: [a, z], pages, pdfBase64: src.kind === 'pdf' ? b64(src.buf) : undefined,
       slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, sendImages: wantImages, fidelity: hifi ? 'high' : undefined, review: !P.agent && $('#review').checked, extra: $('#extra').value.trim() };
     log('Uploading to the local server…');
@@ -283,7 +293,7 @@ $('#books').onclick = async e => {
   const { slug, i } = e.target.dataset; if (!slug || running) return;
   const P = prov(); startProgress(`${slug}, spread ${+i + 1}`);
   try {
-    const body = P.agent ? {} : { provider: P.id, model: $('#model').value.trim() || undefined, baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
+    const body = P.agent ? {} : { ...aiChoice(P), baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
       sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
     const res = await fetch(`/api/books/${encodeURIComponent(slug)}/spreads/${i}/regenerate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);
