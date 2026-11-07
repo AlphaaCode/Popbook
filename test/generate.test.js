@@ -62,6 +62,16 @@ test('a run that never validates still reports what it spent', async () => {
   });
 });
 
+test('prompt layout: system → pages → task, and a repair keeps that prefix byte for byte', async () => {
+  answers = ['nope', EXAMPLE]; calls = 0; sent = [];
+  await generate(job('compat', { baseUrl: base, model: 'm', extra: 'Prefer plots.' }), () => {});
+  const [first, repair] = sent.map(b => b.messages);
+  assert.equal(first[0].role, 'system'); assert.equal(repair[0].content, first[0].content);
+  const user = first[1].content;
+  assert.ok(user.indexOf('=== Page 1 ===\nAmdahl') < user.indexOf('The pages above are pages 1–2') && user.indexOf('The pages above') < user.indexOf('Prefer plots.'));
+  assert.ok(repair[1].content.startsWith(user) && repair[1].content.length > user.length); // only the repair note is new
+});
+
 test('input: text plus images of the figure pages; the native PDF only at high fidelity', async () => {
   const pdf = await PDFDocument.create(); pdf.addPage(); pdf.addPage();
   const pdfBase64 = Buffer.from(await pdf.save()).toString('base64'), image = 'data:image/jpeg;base64,/9j/';

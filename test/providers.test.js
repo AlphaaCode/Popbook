@@ -38,6 +38,7 @@ test('anthropic stream', async () => {
   assert.equal(b.headers['x-api-key'], 'k');
   assert.equal(b.body.stream, true);
   assert.deepEqual(b.body.messages[0].content.map(c => c.type), ['text', 'document', 'image']);
+  assert.deepEqual(b.body.system, [{ type: 'text', text: 's', cache_control: { type: 'ephemeral' } }]); // the cached prefix
 });
 
 test('openai-compatible stream drops the pdf part', async () => {
