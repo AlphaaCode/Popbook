@@ -16,9 +16,39 @@ All notable changes to PopBook Studio are listed here. The format follows
   (first-try validity, repairs, tokens, cost, seconds, estimate vs. real). `--providers mock` is a free dry run.
   `eval/baseline.csv` is the reference for the token-saving work that follows.
 - The mock provider now goes through the real parse / validate / repair loop, so the pipeline is testable offline.
+- **High fidelity** option in the studio (`fidelity: 'high'`): sends the PDF pages themselves, for scans and heavy maths.
+- `SPREAD_MAX_TOKENS` in `.env`: the output cap per spread (default 1 500).
 - Beginner's guide (PDF) for non-technical users: `docs/PopBook-Beginners-Guide.pdf`.
 - Contributing guide, security policy, issue forms, pull request template, Dependabot and code owners.
 - CI now also runs on Windows and Node 24.
+
+### Changed
+Token diet (v0.2 phase 2). Same pipeline, less input and output per call:
+- **Text first.** `lib/pages.js` cleans the page text (running headers, footers and page numbers removed, whitespace
+  collapsed, hyphenated line breaks joined) and finds figure pages from the pdf.js operator list (images that are not
+  page furniture, tables and diagrams drawn as paths, or under 40 characters of text). The model gets the text of every
+  page plus a 1 024 px image of each figure page only; the PDF itself only at high fidelity. Gemini gets those images at
+  medium resolution, its document setting. The studio, the eval and `tools/pdf2pages.mjs` share this code.
+- **Cache-friendly prompts.** Every call is system prompt → pages → task, with nothing per job before the pages; a repair
+  only appends. Claude caches the system prompt (`cache_control`); OpenAI and Gemini reuse the identical prefix.
+- **Bounded output.** The cap per call is 1 500 tokens per spread it may write plus room to think (was 32 000).
+  Reasoning is set explicitly: `low` effort for gpt-6-astra, a 1 024-token thinking budget for gemini-4-argon and
+  gemini-3.8-flash (`REASONING` in `lib/models.js`).
+- **Less to write.** The model is asked for minified JSON and leaves out what the engine fills in: `dir`, lesson `kind`,
+  `short` (now cut from the title at a word), item `id`s, stamp targets and default values.
+- **Narrow repairs.** A rejected batch is resent with its errors and only the spreads they point at, never the whole
+  rejected answer.
+
+Eval, pages 1–10, gemini-3.8-flash, phase 1 baseline → phase 2 (one run each):
+
+| PDF | valid first try | input tokens | output tokens (reasoning) | cost | time |
+|---|---|---|---|---|---|
+| Claude-Call-Me-Guide (9 figure pages) | yes → yes | 14 310 → 13 807 | 9 644 (6 391) → 1 339 (0) | $0.047 → $0.015 | 196 s → 17 s |
+| coursCalculParallel2025 (7 figure pages) | yes → yes | 10 127 → 8 591 | 10 173 (6 558) → 2 725 (0) | $0.046 → $0.017 | 110 s → 98 s |
+
+### Fixed
+- Photos of pages never reached Claude or Gemini (the image switch was hidden and off for providers that read PDFs).
+- The studio's estimate now refreshes when the model, pages per call or image options change.
 
 ## [0.1.0] — 2026-11-02
 
