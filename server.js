@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ROOT, BOOKS, generate, slugify, loadPrompts } from './lib/generate.js';
+import { ROOT, BOOKS, generate, regenerateSpread, slugify, loadPrompts } from './lib/generate.js';
 import { PROVIDERS, agentAvailable } from './lib/providers.js';
 import { estimate } from './lib/estimate.js';
 import { exportBook } from './lib/export.js';
@@ -21,6 +21,18 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const jobs = new Map();
 
 const send = (res, code, body, type = 'application/json; charset=utf-8') => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
+const busy = slug => [...jobs.values()].some(j => j.slug === slug && (j.status === 'running' || j.status === 'review'));
+/** A job the studio follows through /api/jobs/:id: run(job, log) resolves to the book. */
+function startJob(fields, run) {
+  const id = randomUUID(), ac = new AbortController();
+  const job = { ...fields, id, status: 'running', log: [], started: Date.now(), signal: ac.signal, abort: () => ac.abort() };
+  const log = m => { job.log.push(`[${new Date().toLocaleTimeString()}] ${m}`); if (job.log.length > 2000) job.log.splice(0, 500); console.log('[job ' + id.slice(0, 6) + '] ' + m); };
+  jobs.set(id, job);
+  queueMicrotask(() => run(job, log).then(book => { job.status = 'done'; job.title = book.title; log(`Done: "${book.title}" — ${book.spreads.length} spreads. Open /viewer/?book=${job.slug}`); })
+    .catch(e => { job.status = 'error'; if (job.error !== 'Cancelled') job.error = e.message; log('ERROR: ' + job.error); })
+    .finally(() => { delete job.pdfBase64; delete job.pages; delete job.apiKey; }));
+  return { job, log, ac };
+}
 async function readBody(req, limit = 120 * 1024 * 1024) { const chunks = []; let n = 0; for await (const c of req) { n += c.length; if (n > limit) throw new Error('Upload too large'); chunks.push(c); } return Buffer.concat(chunks).toString('utf8'); }
 
 async function api(req, res, url) {
@@ -35,7 +47,9 @@ async function api(req, res, url) {
     const out = [];
     for (const d of await fsp.readdir(BOOKS, { withFileTypes: true })) { if (!d.isDirectory()) continue;
       try { const b = JSON.parse(await fsp.readFile(path.join(BOOKS, d.name, 'book.json'), 'utf8')); const st = await fsp.stat(path.join(BOOKS, d.name, 'book.json'));
-        out.push({ slug: d.name, title: b.title, spreads: b.spreads?.length || 0, lang: b.lang, source: b.source || null, updated: st.mtimeMs }); } catch {} }
+        const regen = fs.existsSync(path.join(BOOKS, d.name, 'outline.json')); // written one spread per call: each can be written again
+        out.push({ slug: d.name, title: b.title, spreads: b.spreads?.length || 0, lang: b.lang, source: b.source || null, updated: st.mtimeMs,
+          list: regen ? b.spreads.map(s => ({ title: s.title, fallback: s.fallback })) : undefined }); } catch {} }
     return send(res, 200, out.sort((a, b) => b.updated - a.updated));
   }
   if (p === '/api/estimate' && req.method === 'POST') { // tokens and cost of a build, before spending any (text only: images are counted, not sent)
@@ -55,10 +69,8 @@ async function api(req, res, url) {
     if (!Array.isArray(body.range) || !body.range.every(Number.isInteger)) body.range = [Math.min(...ns), Math.max(...ns)];
     // never overwrite an existing book: thermo, thermo-2, thermo-3…
     const base = slugify(body.slug || body.fileName); let slug = base;
-    for (let n = 2; fs.existsSync(path.join(BOOKS, slug, 'book.json')) || [...jobs.values()].some(j => j.slug === slug && (j.status === 'running' || j.status === 'review')); n++) slug = `${base}-${n}`;
-    const id = randomUUID(); const ac = new AbortController();
-    const job = { ...body, review: undefined, id, status: 'running', log: [], slug, started: Date.now(), signal: ac.signal, abort: () => ac.abort() };
-    const log = m => { job.log.push(`[${new Date().toLocaleTimeString()}] ${m}`); if (job.log.length > 2000) job.log.splice(0, 500); console.log('[job ' + id.slice(0, 6) + '] ' + m); };
+    for (let n = 2; fs.existsSync(path.join(BOOKS, slug, 'book.json')) || busy(slug); n++) slug = `${base}-${n}`;
+    const { job, log, ac } = startJob({ ...body, review: undefined, slug }, generate);
     // outline review: the build waits here while the author edits the plan in the studio (POST …/outline); an hour without an answer cancels it
     if (body.review === true && !PROVIDERS[body.provider].agent) job.review = outline => new Promise((resolve, reject) => {
       const timer = setTimeout(() => { job.error = 'The outline was not reviewed within an hour'; ac.abort(); }, 60 * 60 * 1000);
@@ -66,13 +78,17 @@ async function api(req, res, url) {
       Object.assign(job, { status: 'review', outline, resume: o => { clearTimeout(timer); Object.assign(job, { status: 'running', outline: undefined, resume: undefined }); resolve(o); } });
       log('Outline ready: review it below (edit, reorder or delete spreads), then write the book.');
     });
-    jobs.set(id, job);
-    generate(job, log).then(book => { job.status = 'done'; job.title = book.title; log(`Done: "${book.title}" — ${book.spreads.length} spreads. Open /viewer/?book=${slug}`); })
-      .catch(e => { job.status = 'error'; if (job.error !== 'Cancelled') job.error = e.message; log('ERROR: ' + job.error); })
-      .finally(() => { delete job.pdfBase64; delete job.pages; delete job.apiKey; });
-    return send(res, 200, { id, slug });
+    return send(res, 200, { id: job.id, slug });
   }
   let m;
+  if ((m = /^\/api\/books\/([\w-]+)\/spreads\/(\d+)\/regenerate$/.exec(p)) && req.method === 'POST') { // one spread again, the rest of the book untouched
+    const b = JSON.parse(await readBody(req) || '{}'), slug = m[1];
+    if (busy(slug)) return send(res, 409, { error: 'This book is being written: wait for that build to finish' });
+    const P = PROVIDERS[b.provider], api = P && !P.agent; // an agent picked in the studio: the book's own provider instead
+    const { job } = startJob({ slug, index: Number(m[2]), ...(api && { provider: b.provider, model: b.model, apiKey: b.apiKey, baseUrl: b.baseUrl }),
+      fidelity: b.fidelity, sendImages: b.sendImages }, regenerateSpread);
+    return send(res, 200, { id: job.id, slug });
+  }
   if ((m = /^\/api\/jobs\/([\w-]+)$/.exec(p)) && req.method === 'GET') { const j = jobs.get(m[1]); if (!j) return send(res, 404, { error: 'No such job' }); const since = Number(url.searchParams.get('since') || 0);
     return send(res, 200, { status: j.status, slug: j.slug, error: j.error, title: j.title, outline: j.status === 'review' ? j.outline : undefined, log: j.log.slice(since), next: j.log.length }); }
   if ((m = /^\/api\/jobs\/([\w-]+)\/outline$/.exec(p)) && req.method === 'POST') { const j = jobs.get(m[1]);

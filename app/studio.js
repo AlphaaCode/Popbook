@@ -189,11 +189,14 @@ function setBar(p) { const bar = $('.bar'); bar.classList.toggle('indet', p === 
 
 function b64(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 
-$('#go').onclick = async () => {
-  const P = prov(); const [a, z] = clampRange();
+function startProgress(title) {
   running = true; refreshGo();
   const card = $('#progress'); card.hidden = false; card.classList.remove('failed'); $('#doneRow').hidden = true; $('#cancel').hidden = false;
-  logEl.innerHTML = ''; setBar(0.02); $('#jobTitle').textContent = '· ' + src.name; card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  logEl.innerHTML = ''; setBar(0.02); $('#jobTitle').textContent = '· ' + title; card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('#go').onclick = async () => {
+  const P = prov(); const [a, z] = clampRange();
+  startProgress(src.name);
   try {
     const wantImages = wantsImages(P), hifi = highFidelity(P), pages = [];
     if (src.kind === 'pdf') {
@@ -209,7 +212,7 @@ $('#go').onclick = async () => {
     log('Uploading to the local server…');
     const res = await fetch('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);
-    jobId = j.id; await follow(j.id, P);
+    jobId = j.id; await follow(j.id, !P.agent);
   } catch (e) { log('ERROR: ' + e.message); fail(); }
 };
 /* outline review: the build waits on the server until the edited plan comes back */
@@ -240,13 +243,14 @@ function apiProgress(text) {
   const m = [...text.matchAll(/Outline(?: \(reviewed\))?: ".*?", (\d+) spreads/g)].pop(); if (!m) return 0.1 + (/Outline → /.test(text) ? 0.05 : 0);
   return 0.25 + 0.73 * (text.match(/Spread \d+\/\d+ [✓⚠]/g) || []).length / +m[1]; // the log's lines, joined
 }
-async function follow(id, P) {
+/** staged: an API build, whose log tells its progress (an agent's or a single spread's does not) */
+async function follow(id, staged) {
   let since = 0;
-  setBar(P.agent ? null : 0.1);
+  setBar(staged ? 0.1 : null);
   for (;;) {
     const r = await fetch(`/api/jobs/${id}?since=${since}`).then(r => r.json());
     r.log.forEach(log); since = r.next;
-    if (!P.agent) setBar(apiProgress(logEl.textContent));
+    if (staged) setBar(apiProgress(logEl.textContent));
     if (r.status === 'done') { setBar(1); $('#cancel').hidden = true; $('#openBook').href = `/viewer/?book=${encodeURIComponent(r.slug)}`; $('#exportBook').href = `/api/books/${encodeURIComponent(r.slug)}/export`; $('#doneRow').hidden = false; running = false; refreshGo(); loadBooks(); return; }
     if (r.status === 'review' && $('#outlineReview').hidden) showReview(id, r.outline);
     if (r.status === 'error') { $('#outlineReview').hidden = true; fail(); return; }
@@ -263,9 +267,29 @@ async function loadBooks() {
   const books = await fetch('/api/books').then(r => r.json()).catch(() => []);
   $('#books').innerHTML = books.length ? books.map(b => `<div class="book"><b>${esc(b.title)}</b>
     <span class="meta">${b.spreads} spreads · ${esc(b.lang || '')} · ${new Date(b.updated).toLocaleDateString()}${b.source?.file ? ' · ' + esc(b.source.file) : ''}</span>
-    <div class="row"><a class="link" href="/viewer/?book=${encodeURIComponent(b.slug)}" target="_blank">open</a><a class="link" href="/api/books/${encodeURIComponent(b.slug)}/export">download HTML</a><span class="meta">books/${esc(b.slug)}</span></div></div>`).join('')
+    <div class="row"><a class="link" href="/viewer/?book=${encodeURIComponent(b.slug)}" target="_blank">open</a><a class="link" href="/api/books/${encodeURIComponent(b.slug)}/export">download HTML</a><span class="meta">books/${esc(b.slug)}</span></div>${spreadList(b)}</div>`).join('')
     : '<p class="empty">No books yet.</p>';
 }
+/** The spreads of a book written one per call, each with a regenerate button; ⚠ marks those PopBook wrote when the model failed. */
+function spreadList(b) {
+  if (!b.list) return '';
+  const flagged = b.list.filter(s => s.fallback).length;
+  return `<details class="spreads"${flagged ? ' open' : ''}><summary>spreads${flagged ? ` · ⚠ ${flagged} written by PopBook` : ''}</summary><ol>${b.list.map((s, i) => `<li>${esc(s.title)}`
+    + `${s.fallback ? ` <span class="flag" title="the model failed 3 times: PopBook wrote its ${esc(s.fallback.join(', '))} from the page text">⚠ ${esc(s.fallback.join(', '))}</span>` : ''}`
+    + ` <button class="link" data-slug="${esc(b.slug)}" data-i="${i}">regenerate</button></li>`).join('')}</ol></details>`;
+}
+/* one spread written again by the AI picked above (an agent picked: the book's own model), the rest of the book untouched */
+$('#books').onclick = async e => {
+  const { slug, i } = e.target.dataset; if (!slug || running) return;
+  const P = prov(); startProgress(`${slug}, spread ${+i + 1}`);
+  try {
+    const body = P.agent ? {} : { provider: P.id, model: $('#model').value.trim() || undefined, baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
+      sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
+    const res = await fetch(`/api/books/${encodeURIComponent(slug)}/spreads/${i}/regenerate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);
+    jobId = j.id; await follow(j.id, false);
+  } catch (err) { log('ERROR: ' + err.message); fail(); }
+};
 $('#refresh').onclick = loadBooks;
 
 function alertBox(msg) { $('#goHint').textContent = msg; $('#goHint').className = 'hint center warn'; }

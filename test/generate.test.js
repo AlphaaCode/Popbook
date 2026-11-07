@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 process.env.POPBOOK_MOCK = '1'; // before providers.js is evaluated
-const { generate, BOOKS, CACHE, outlineCap, spreadCap, loadPrompts } = await import('../lib/generate.js');
+const { generate, regenerateSpread, BOOKS, CACHE, outlineCap, spreadCap, loadPrompts } = await import('../lib/generate.js');
 const { BLOCKS, validateBook } = await import('../lib/validate.js');
 
 const EX = JSON.parse(await fs.readFile(new URL('../books/calcul-parallele/book.json', import.meta.url), 'utf8'));
@@ -189,4 +189,23 @@ test('outline review: the spreads written are the edited outline\'s, in its orde
   assert.ok(userText(of(1)[0].body).includes('1. pages 2 · bars — growth')); // writers see the edited plan
   assert.ok(lines.some(l => l.startsWith('Outline (reviewed): "Edited", 1 spreads')));
   assert.equal(JSON.parse(await fs.readFile(path.join(BOOKS, j.slug, 'outline.json'), 'utf8')).title, 'Edited');
+});
+
+test('regenerate: one spread written again past the result cache, from the saved pages, image and outline; the rest kept, usage added', async () => {
+  const known = new Set(await fs.readdir(CACHE).catch(() => [])), image = 'data:image/jpeg;base64,/9j/';
+  const pages = [{ n: 1, text: 'Amdahl' }, { n: 2, text: `regen test ${process.pid} ${Date.now()}`, image }];
+  const anth = { baseUrl: base, apiKey: 'k' };
+  try {
+    reply = answers([() => COVER, () => BARS]); sent = [];
+    const j = job('anthropic', { ...anth, pages, lang: 'fr', cache: true }), first = await generate(j, () => {});
+    reply = answers([() => COVER, () => ({ ...BARS, title: 'Loi de Moore, encore' })]); sent = [];
+    const lines = [], book = await regenerateSpread({ slug: j.slug, index: 1, provider: 'anthropic', ...anth }, m => lines.push(m));
+    assert.equal(of(2).length, 1); // the cached answer of the first build was not reused
+    assert.ok(userText(of(2)[0].body).includes(pages[1].text) && JSON.stringify(of(2)[0].body).includes('"data":"/9j/"')); // its saved page text and image
+    assert.deepEqual([book.spreads[1].title, book.spreads[0], book.source.calls], ['Loi de Moore, encore', first.spreads[0], first.source.calls + 1]);
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(BOOKS, j.slug, 'book.json'), 'utf8')).spreads[1].title, 'Loi de Moore, encore');
+    assert.ok(lines.some(l => l.startsWith('Spread 2/2 ✓')));
+    await assert.rejects(regenerateSpread({ slug: j.slug, index: 5 }, () => {}), /No spread 6/);
+    await assert.rejects(regenerateSpread({ slug: 'calcul-parallele', index: 0 }, () => {}), /no outline\.json/);
+  } finally { for (const f of await fs.readdir(CACHE)) if (!known.has(f)) await fs.rm(path.join(CACHE, f)); }
 });

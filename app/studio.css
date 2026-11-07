@@ -85,6 +85,8 @@ a.primary{width:auto}
 .book b{font:400 20px/1.15 "Instrument Serif",serif}
 .book .meta{font:11px "JetBrains Mono",monospace;color:var(--muted)}
 .book .row{margin-top:6px;gap:14px}
+.book .spreads{margin-top:8px;font-size:13px}.book .spreads summary{cursor:pointer;font:11px "JetBrains Mono",monospace;color:var(--muted)}
+.book .spreads ol{margin:6px 0 0;padding-inline-start:22px;display:grid;gap:3px}.book .spreads .flag{color:var(--accent);font:11px "JetBrains Mono",monospace}
 .empty{color:var(--muted);font-style:italic}
 .agentBox{border:1.3px dashed rgba(31,29,26,.5);padding:14px 16px;background:var(--page)}
 .agentBox p{margin:4px 0}
