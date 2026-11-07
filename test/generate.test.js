@@ -72,6 +72,20 @@ test('prompt layout: system → pages → task, and a repair keeps that prefix b
   assert.ok(repair[1].content.startsWith(user) && repair[1].content.length > user.length); // only the repair note is new
 });
 
+test('a repair resends the batch with the errors and the faulty spread only, never the whole rejected answer', async () => {
+  const bad = JSON.parse(EXAMPLE); bad.spreads[2].quiz.a = 9;
+  answers = [JSON.stringify(bad), EXAMPLE]; calls = 0; sent = [];
+  const book = await generate(job('compat', { baseUrl: base, model: 'm' }), () => {});
+  assert.equal(book.source.repairs, 1);
+  const [first, repair] = sent.map(b => b.messages[1].content), note = repair.slice(first.length);
+  assert.match(note, /- spreads\[2\]\.quiz\.a: must be the 0-based index/);
+  assert.ok(note.includes(`spreads[2]: ${JSON.stringify(bad.spreads[2])}`));
+  assert.ok(!note.includes(bad.spreads[1].title) && note.length < JSON.stringify(bad).length / 3); // not the other spreads
+  answers = ['sorry, no json: ' + 'x'.repeat(5000), EXAMPLE]; calls = 0; sent = [];
+  await generate(job('compat', { baseUrl: base, model: 'm' }), () => {});
+  assert.ok(!sent[1].messages[1].content.includes('sorry')); // an unusable answer is not echoed back either
+});
+
 test('output cap: 1 500 tokens per possible spread, plus room to think', async () => {
   assert.equal(outputCap('anthropic', 'claude-opus-5-5', 10), 1500 * 9); // up to 8 spreads + the cover; Claude does not think unasked
   assert.equal(outputCap('gemini', 'gemini-3.8-flash', 10), 1500 * 9 + 1024); // its thinking budget
