@@ -45,6 +45,24 @@ test('normalizes ids, dir and defaults', () => {
   assert.deepEqual(v.book.spreads[0].targets, ['meteo', 'meteo-2']);
 });
 
+test('what prompts/system.md marks optional is filled in: short, kind, dir, ids, targets, block defaults', () => {
+  const minimal = { title: 'T', lang: 'ar', spreads: [
+    { title: 'Architecture et calcul parallèles', concept: 'C.', formula: { eq: 'S = 1/s' }, vocab: [['a', 'b']], quiz: { q: 'Q?', opts: ['x', 'y'], a: 0 }, why: 'W.',
+      scene: { type: 'flow', steps: [{ label: 'Read data' }, { label: 'Compute' }] } },
+    { title: 'Short one', concept: 'C.', formula: { eq: 'x' }, vocab: [['a', 'b']], quiz: { q: 'Q?', opts: ['x', 'y'], a: 1 }, why: 'W.',
+      scene: { type: 'bars', items: [{ label: '4004', x: 1971, value: 2300 }, { label: 'P4', x: 2000, value: 4.2e7 }] } },
+  ] };
+  const v = validateBook(minimal);
+  assert.deepEqual(v.errors, []);
+  const [flow, bars] = v.book.spreads;
+  assert.equal(v.book.dir, 'rtl');
+  assert.deepEqual([flow.kind, flow.short, bars.short], ['lesson', 'Architecture et…', 'Short one']);
+  assert.ok(flow.short.length <= 22);
+  assert.deepEqual(flow.scene.steps.map(s => s.id), ['read-data', 'compute']);
+  assert.deepEqual(flow.targets, ['play', 'read-data', 'compute']);
+  assert.equal(bars.scene.log, true); assert.equal(bars.scene.items[0].valueText, '2300');
+});
+
 test('model expressions are compiled against param and toggle ids', () => {
   const ok = book({ type: 'model', param: { id: 'f', min: 1, max: 5 }, toggle: { id: 'n' }, outputs: [{ label: 'p', expr: 'n*f^3' }], threshold: { value: 4, when: 'n==1' } });
   const v = validateBook(ok);

@@ -14,7 +14,7 @@ The 3D engine is already written. **You do not write code.** You write one JSON 
 - a lesson gets a **completion stamp** when the reader has answered the quiz and touched
   every interactive part of the model.
 
-Return **only** the JSON (no prose, no Markdown fences).
+Return **only** the JSON, **minified on one line** (no indentation, no prose, no Markdown fences).
 
 ---
 
@@ -27,7 +27,7 @@ Return **only** the JSON (no prose, no Markdown fences).
 3. Stay faithful to the source. Every fact on the left page must come from the pages. If you add
    a standard fact the pages do not state (a classic formula, a definition), say so in the
    formula `note` (e.g. "standard result, not on the slide").
-4. Write in the **language of the source** (set `lang`). For Arabic or Hebrew set `"dir": "rtl"`.
+4. Write in the **language of the source** (set `lang`; the text direction follows from it).
    Keep the technical terms the source uses.
 5. Be concise: the left page is small. Respect the length limits below.
 
@@ -64,11 +64,9 @@ it back to the model.
   "title": "Course title",
   "subtitle": "Programme · institution · author · year (whatever the source states)",
   "lang": "fr",
-  "dir": "ltr",
   "spreads": [
     {
       "kind": "cover",
-      "short": "Cover & plan",
       "slides": "Slides 1–2",
       "title": "≤ 60 chars",
       "concept": "≤ 260 chars",
@@ -77,8 +75,6 @@ it back to the model.
       "scene": { "type": "network", "...": "..." }
     },
     {
-      "kind": "lesson",
-      "short": "≤ 22 chars, for the toolbar",
       "slides": "Slide 7 / Pages 12–13",
       "title": "≤ 60 chars",
       "concept": "2 sentences, ≤ 260 chars",
@@ -93,8 +89,11 @@ it back to the model.
 }
 ```
 
-`vocab`: 3–4 entries. Every `id` inside a scene is a short lowercase ASCII slug, unique in the spread.
-All visible strings inside scenes are short (labels ≤ 18 chars, tips ≤ 140 chars).
+`vocab`: 3–4 entries. All visible strings inside scenes are short (labels ≤ 18 chars, tips ≤ 140 chars).
+
+**Leave out what the engine fills in**: `dir`, `"kind": "lesson"`, the toolbar label `short` (cut from the title), every
+item `id` (made from its label) and the stamp targets. Write `param.id` and `toggle.id` only: expressions use them.
+Omit a field that equals its stated default.
 
 ## 5. Scene block catalogue
 
@@ -103,22 +102,22 @@ All visible strings inside scenes are short (labels ≤ 18 chars, tips ≤ 140 c
 { "type": "race",
   "a": { "label": "Lab server" }, "b": { "label": "HPC cluster" },
   "unit": "days",
-  "items": [ { "id": "hog", "label": "Hogenom", "short": "1 yr → 3 d", "tip": "…",
-               "a": 365, "b": 3, "aText": "1 year", "bText": "3 days" } ] }
+  "items": [ { "label": "Hogenom", "tip": "…", "a": 365, "b": 3, "aText": "1 year", "bText": "3 days" } ] }
 ```
 `a`/`b` are numbers in the same `unit` (`"days"` formats as d / months / years; any other unit is printed raw).
-When the source is vague ("several years") pick a sensible number and keep the source wording in `aText`/`bText`.
+When the source is vague ("several years") pick a sensible number and keep the source wording in `aText`/`bText`
+(default: the number). An item's `short` label defaults to "aText → bText".
 Interactive ids: each item id.
 
 ### `bars` — ordered values as rising towers, with log/linear toggle and optional growth law
 ```json
 { "type": "bars",
   "items": [ { "label": "4004", "x": 1971, "value": 2300, "valueText": "2 300", "tip": "…" } ],
-  "log": true,
   "growth": { "label": "×2 every 2 years", "factor": 2, "every": 2 },
   "unitLabel": "transistors" }
 ```
-2–7 items, `x` increasing numbers (years, sizes…). `growth` optional: draws value₀·factor^((x−x₀)/every).
+2–7 items, `x` increasing numbers (years, sizes…). Log scale unless `"log": false`. `valueText` defaults to the value.
+`growth` optional: draws value₀·factor^((x−x₀)/every).
 Interactive ids: `play`, `bar`, `scale`.
 
 ### `model` — a slider drives formulas; a threshold wall; an optional toggle
@@ -136,7 +135,8 @@ Interactive ids: `play`, `bar`, `scale`.
 ```
 `expr`/`when` are math expressions over the param id and toggle id: numbers, + − * / ^ ( ),
 comparisons, && || !, ?:, and min max abs sqrt log log10 exp pow round floor ceil. First matching message wins.
-`visual`: `chip` (glowing processor units, one per toggle value), `tank` (liquid level = gauge), `dial`.
+`visual`: `chip` (default: glowing processor units, one per toggle value), `tank` (liquid level = gauge), `dial`.
+`param.step` defaults to 1/100 of the range, `param.value` to `min`.
 Interactive ids: `param`, `threshold` (only if present), `toggle` (only if present).
 
 ### `plot` — an explorable curve y = f(x, p) on a standing paper panel
@@ -153,13 +153,13 @@ Interactive ids: `param`, `curve`.
 ### `flow` — a pipeline / algorithm; a glowing token travels through the steps
 ```json
 { "type": "flow", "token": "data",
-  "steps": [ { "id": "read", "label": "Read", "tip": "…" } ], "loop": false }
+  "steps": [ { "label": "Read", "tip": "…" } ] }
 ```
-2–6 steps. Interactive ids: `play` and every step id.
+2–6 steps; `"loop": true` makes the token cycle. Interactive ids: `play` and every step id.
 
 ### `stack` — stepped levels / layers of abstraction
 ```json
-{ "type": "stack", "levels": [ { "id": "hw", "title": "HARDWARE", "sub": "hyperthreading", "tip": "…" } ] }
+{ "type": "stack", "levels": [ { "title": "HARDWARE", "sub": "hyperthreading", "tip": "…" } ] }
 ```
 2–4 levels, list them bottom → top. Interactive ids: every level id.
 
@@ -168,7 +168,7 @@ Interactive ids: `param`, `curve`.
 { "type": "scheduler", "tasks": ["App A", "App B", "App C"],
   "quantum": { "label": "Quantum", "min": 0.05, "max": 1.5, "value": 0.6 },
   "ht": { "label": "Hyperthreading" },
-  "levels": [ { "id": "hw", "title": "HARDWARE", "sub": "hyperthreading", "tip": "…" } ] }
+  "levels": [ { "title": "HARDWARE", "sub": "hyperthreading", "tip": "…" } ] }
 ```
 2–4 tasks; `ht` and `levels` (≤3, bottom → top) optional. Interactive ids: `core` + level ids.
 
@@ -182,7 +182,7 @@ Interactive ids: `param`, `curve`.
 ### `showcase` — 1–4 objects on the page, each clickable, optionally cycling through steps
 ```json
 { "type": "showcase",
-  "items": [ { "id": "meteo", "model": "globe", "label": "Weather", "sub": "mesh", "tip": "…",
+  "items": [ { "model": "globe", "label": "Weather", "sub": "mesh", "tip": "…",
                "steps": [ { "label": "28 km", "value": "points ×1" }, { "label": "7 km", "value": "points ×16" } ] } ] }
 ```
 `model` ∈ `globe` (grid refines with each step), `head` (scan slice), `layers` (geological block with wells),
@@ -204,4 +204,4 @@ book folder. Only use it when you can write files (see `CLAUDE.md`). API mode mu
 - Every spread except the cover has `formula`, 3–4 `vocab`, a `quiz` with a valid `a`, `why` and `fig`.
 - Every `expr` / `when` only uses the param id, the toggle id (and `x` in `plot`).
 - No fact is invented; added standard facts are flagged in `formula.note`.
-- The whole answer is one JSON object and nothing else.
+- The whole answer is one minified JSON object and nothing else.
