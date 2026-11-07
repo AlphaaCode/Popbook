@@ -59,7 +59,8 @@ test('stages: the planner reads every page; each writer gets only its pages and 
   assert.deepEqual(book.spreads.map(s => s.scene.type), ['network', 'bars']);
   assert.deepEqual([book.source.calls, book.source.repairs], [3, 0]);
   const [o] = of('outline'), [w1] = of(1), [w2] = of(2), prompts = await loadPrompts();
-  for (const s of sent) assert.equal(s.body.messages[0].content, prompts.core); // the same system prompt for every call: one cached prefix
+  assert.equal(o.body.messages[0].content, prompts.planner); // each step its own rules…
+  for (const s of [w1, w2]) assert.equal(s.body.messages[0].content, prompts.writer); // …the same for every writer: one cached prefix
   const ot = userText(o.body);
   assert.ok(ot.includes('=== Page 1 ===\nAmdahl') && ot.includes('=== Page 2 ===\nGustafson') && ot.includes('Prefer plots.'));
   assert.ok(!Object.values(prompts.blocks).some(spec => ot.includes(spec))); // the planner needs the table, not the specs
@@ -164,6 +165,9 @@ test('prompts: the core rules plus one file per API block', async () => {
   assert.deepEqual(Object.keys(p.blocks), BLOCKS.filter(b => b !== 'custom')); // custom scenes are for agents only
   for (const [b, spec] of Object.entries(p.blocks)) assert.ok(spec.startsWith('### `' + b + '`'), b);
   assert.match(p.core, /## 3\. The outline/);
+  const secs = s => s.match(/^## \d+/gm).map(h => +h.slice(3));
+  assert.deepEqual([secs(p.planner), secs(p.writer)], [[1, 2, 3, 6], [1, 4, 5, 7]]); // each step only the rules it needs
+  assert.ok(p.planner.startsWith(p.core.slice(0, 200)) && p.writer.startsWith(p.core.slice(0, 200))); // both keep the intro
 });
 
 test('result cache: the same pages again cost nothing, a changed model misses it', async () => {
