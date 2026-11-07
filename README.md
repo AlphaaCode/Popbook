@@ -51,11 +51,16 @@ The AI never writes 3D code. It writes one file, `book.json`, in a strict format
 book, so results stay reliable even with small models.
 
 ```
-PDF pages ──► model / agent ──► book.json ──► validate (+ up to 2 repair rounds) ──► books/<slug>/ ──► 3D viewer
+pages ──► outline call ──► [review] ──► one call per spread (3 at a time) ──► autofix + validate ──► book.json ──► 3D viewer
 ```
 
-Long ranges are sent in batches (15 pages per call by default) and the spreads are merged. If an answer fails
-validation, the errors and the previous answer go back to the model, up to two times.
+With an API, one call reads every page and plans the book (an outline: which pages, which scene block, what each spread
+teaches); tick *let me review the outline* to edit, reorder or delete its spreads first. Each spread is then written by
+its own call, which gets only its pages and its block's spec. Every answer is fixed in code first (`lib/autofix.js`);
+one that still fails validation is sent back with its errors, then to the planner model once, and if it still fails
+PopBook writes that spread itself from the page text and flags it ⚠ in *Your books*, where any spread can be
+regenerated. Valid answers are kept in `.cache/`: the same pages with the same prompts and model cost nothing the
+second time. Agents (Claude Code, Codex, Gemini CLI) write the whole book in one session instead.
 
 ## AI options
 
@@ -192,9 +197,9 @@ tools/              check.mjs, pdf2pages.mjs, export.mjs
   a bad key, an unknown model name or exhausted credit.
 - **Ollama answers are cut off or ignore the instructions.** Ollama's default context window is small. Start it
   with a larger one, for example `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`, and use base URL
-  `http://localhost:11434/v1`. Small local models often fail validation; lower *pages per call* (5–8), or use a
+  `http://localhost:11434/v1`. Small local models often fail validation: regenerate the spreads flagged ⚠ with a
   bigger model.
-- **"The JSON in the answer is cut off".** The model hit its output limit. Lower *pages per call*.
+- **"The JSON in the answer is cut off".** A spread hit its output limit. Raise `SPREAD_MAX_TOKENS` in `.env`.
 - **An agent is "not installed".** The command must be on the PATH of the terminal that runs `npm start`. Run
   `claude --version` (or `codex`, `gemini`) there first, and log in once interactively.
 - **Windows.** Everything works from PowerShell, cmd or Git Bash. npm-installed agent CLIs (`.cmd` shims) are

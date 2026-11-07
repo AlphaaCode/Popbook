@@ -21,6 +21,12 @@ All notable changes to PopBook Studio are listed here. The format follows
 - Beginner's guide (PDF) for non-technical users: `docs/PopBook-Beginners-Guide.pdf`.
 - Contributing guide, security policy, issue forms, pull request template, Dependabot and code owners.
 - CI now also runs on Windows and Node 24.
+- **Outline review** in the studio: *let me review the outline* pauses the build to edit, reorder or delete spreads
+  (`POST /api/jobs/:id/outline`).
+- **Regenerate this spread**: *Your books* lists the spreads of API-built books, marks with ⚠ those PopBook wrote, and
+  rewrites any one of them with the AI picked in the studio (`POST /api/books/:slug/spreads/:i/regenerate`).
+- **Result cache** in `.cache/`: every valid outline and spread, keyed by a sha256 of what its call sends (pages, prompts,
+  model). The same build again costs no tokens; regenerate skips it. Delete the folder to reset.
 
 ### Changed
 Token diet (v0.2 phase 2). Same pipeline, less input and output per call:
@@ -46,9 +52,23 @@ Eval, pages 1–10, gemini-3.8-flash, phase 1 baseline → phase 2 (one run each
 | Claude-Call-Me-Guide (9 figure pages) | yes → yes | 14 310 → 13 807 | 9 644 (6 391) → 1 339 (0) | $0.047 → $0.015 | 196 s → 17 s |
 | coursCalculParallel2025 (7 figure pages) | yes → yes | 10 127 → 8 591 | 10 173 (6 558) → 2 725 (0) | $0.046 → $0.017 | 110 s → 98 s |
 
+Staged pipeline (v0.2 phase 3). API builds no longer write the whole book in one answer:
+- **Outline, then one call per spread.** A planner call reads every page and returns an outline
+  (`{title, spreads: [{pages, block, intent}]}`, saved as `outline.json`); then one writer call per spread, 3 at a time,
+  gets only its pages, its block's spec and the outline (a shared, cached prefix). Replaces batches and *pages per call*.
+- **Prompt split.** `prompts/system.md` is now `prompts/core.md` (the rules, sent with every call) and
+  `prompts/blocks/<name>.md` (one per scene block, sent only to the spread that uses it).
+- **Fix in code first.** `lib/autofix.js` clamps ranges, fills defaults, drops unknown keys, snaps a misspelt block name to
+  the nearest one, trims long text and unwraps odd answer shapes before any repair call. Then: one repair with the errors,
+  one try on the planner model (`plannerModel`), and finally a spread PopBook writes from the page text, flagged
+  (`"fallback": [parts]`) instead of failing the build.
+- The estimate counts one outline call plus ~0.6 spreads per page.
+
 ### Fixed
 - Photos of pages never reached Claude or Gemini (the image switch was hidden and off for providers that read PDFs).
 - The studio's estimate now refreshes when the model, pages per call or image options change.
+- A scene list of strings or a missing list (`"items": ["a", "b"]`) crashed validation instead of being reported as an
+  error.
 
 ## [0.1.0] — 2026-11-02
 
