@@ -81,6 +81,9 @@ Routing and weak models (v0.2 phase 4):
   llama.cpp to a GBNF grammar). A server that refuses it is asked again without.
 - **`claude-cli` provider**: the staged pipeline on a Claude login, no API key. Each call is `claude -p` with no tools,
   `--safe-mode`, our system prompt and `--json-schema`. Text only.
+- **Two or three spreads per writer call.** Neighbouring spreads share one call (7 spreads → 3 calls), so the rules, the
+  outline and the task go out 3 times instead of 7. Each spread of the answer (`{"spreads": […]}`) is fixed and validated on
+  its own; one that fails is repaired alone, in a call with only its pages. The output cap grows with the spreads asked for.
 - **Agent bundle.** A local agent gets `books/<slug>/input/` (`pages.md`, `fig-<n>.jpg`, and `outline.json` when a plain
   model of its family can plan: `claude -p`, or the Gemini / OpenAI API with a key) and a short `PROMPT.md` that names
   the files to read and forbids opening the PDF or exploring the repo. Claude Code and Gemini CLI get `--model` per preset.

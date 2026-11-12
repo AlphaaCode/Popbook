@@ -17,7 +17,8 @@ The 3D engine is already written. **You do not write code.** You write the JSON 
 A book is made in two steps. The task at the end of the message says which one to do:
 
 1. **Outline**: read all the pages and plan the book (sections 1–3).
-2. **Spread**: write one spread of that plan from its own pages, with the spec of its scene block (sections 4–5).
+2. **Spreads**: write the spreads of that plan the task lists (one to three neighbours) from their own pages, with the spec of each
+   one's scene block (sections 4–5), as `{"spreads":[…]}` in the order listed.
 
 (Agents writing `book.json` directly do both: plan first, then write every spread.)
 
@@ -78,7 +79,7 @@ obvious once they play with the right page. 3 options (2–4 allowed), one corre
 0-based index), distractors plausible. `why` explains the answer in 2–3 sentences and ties
 it back to the model.
 
-## 5. book.json format (step 2 writes one element of `spreads`)
+## 5. book.json format (step 2 writes elements of `spreads`)
 
 ```json
 {

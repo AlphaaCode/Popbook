@@ -51,13 +51,14 @@ The AI never writes 3D code. It writes one file, `book.json`, in a strict format
 book, so results stay reliable even with small models.
 
 ```
-pages ──► outline call ──► [review] ──► one call per spread (3 at a time) ──► autofix + validate ──► book.json ──► 3D viewer
+pages ──► outline call ──► [review] ──► one call per 2–3 spreads (3 at a time) ──► autofix + validate ──► book.json ──► 3D viewer
 ```
 
 With an API, one call reads every page and plans the book (an outline: which pages, which scene block, what each spread
-teaches); tick *let me review the outline* to edit, reorder or delete its spreads first. Each spread is then written by
-its own call, which gets only its pages and its block's spec. Every answer is fixed in code first (`lib/autofix.js`);
-one that still fails validation is sent back with its errors, then to the planner model once, and if it still fails
+teaches); tick *let me review the outline* to edit, reorder or delete its spreads first. The spreads are then written
+two or three neighbours per call, which gets only their pages and their blocks' specs. Every spread is fixed in code first
+(`lib/autofix.js`) and checked on its own; one that still fails validation is sent back alone with its errors, then to the
+planner model once, and if it still fails
 PopBook writes that spread itself from the page text and flags it ⚠ in *Your books*, where any spread can be
 regenerated. Valid answers are kept in `.cache/`: the same pages with the same prompts and model cost nothing the
 second time. Agents (Claude Code, Codex, Gemini CLI) write the whole book in one session instead, from a bundle the studio

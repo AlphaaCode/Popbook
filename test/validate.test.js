@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { validateBook, sceneTargets, spreadSchema, outlineSchema, API_BLOCKS } from '../lib/validate.js';
+import { validateBook, sceneTargets, spreadSchema, writerSchema, outlineSchema, API_BLOCKS } from '../lib/validate.js';
 import { extractJson } from '../lib/generate.js';
 
 const lesson = scene => ({
@@ -117,12 +117,13 @@ const fits = (v, s, at = '$') => {
     s.properties[k] ? fits(x, s.properties[k], `${at}.${k}`) : ['id', 'short', 'kind', 'howto'].includes(k) ? [] : [`${at}.${k}: unknown`])];
 };
 
-test('schemas: every spread of the example books fits its block\'s schema and the loose one; mistakes do not', () => {
+test('schemas: every spread of the example books fits its block\'s schema and a writer answer of the book; mistakes do not', () => {
   for (const slug of ['calcul-parallele', 'blocks-demo']) {
-    for (const s of JSON.parse(fs.readFileSync(`books/${slug}/book.json`, 'utf8')).spreads.filter(s => s.scene.type !== 'custom')) {
-      assert.deepEqual(fits(s, spreadSchema(s.scene.type, s.kind === 'cover')), [], `${slug}: ${s.title}`);
-      assert.deepEqual(fits(s, spreadSchema(null)), [], `${slug}: ${s.title} (loose)`);
-    }
+    const ss = JSON.parse(fs.readFileSync(`books/${slug}/book.json`, 'utf8')).spreads.filter(s => s.scene.type !== 'custom');
+    for (const s of ss) assert.deepEqual(fits(s, spreadSchema(s.scene.type, s.kind === 'cover')), [], `${slug}: ${s.title}`);
+    const w = writerSchema(ss.map(s => ({ kind: s.kind, block: s.scene.type })));
+    for (let i = 0; i < ss.length; i += 3) assert.deepEqual(fits({ spreads: ss.slice(i, i + 3) }, w), [], `${slug}: spreads ${i + 1}–`);
+    assert.deepEqual(fits({ spreads: ss.slice(0, 4) }, w), ['$.spreads: 4 items']);
   }
   const s = lesson({ type: 'flow', steps: [{ label: 'a' }, { label: 'b' }] }), flow = spreadSchema('flow');
   assert.deepEqual(fits(s, flow), []);
@@ -132,7 +133,8 @@ test('schemas: every spread of the example books fits its block\'s schema and th
   assert.ok(fits({ ...s, scene: { type: 'bars', items: [] } }, flow).includes('$.scene.type: "bars" not allowed'));
   const race = lesson({ type: 'race', items: [{ label: 'x', a: 0, b: 2 }] });
   assert.deepEqual(fits(race, spreadSchema('race')), ['$.scene.items[0].a: 0 not > 0']); // a race time must be positive, as validateBook says
-  assert.deepEqual(spreadSchema(null).properties.scene.anyOf.map(x => x.properties.type.enum[0]), API_BLOCKS);
+  assert.deepEqual(spreadSchema(API_BLOCKS).properties.scene.anyOf.map(x => x.properties.type.enum[0]), API_BLOCKS);
+  assert.deepEqual(fits({ spreads: [{ ...s, quiz: undefined }] }, writerSchema([{ block: 'flow' }])).length, 1); // a lesson keeps its required parts
   assert.deepEqual(fits({ title: 'T', spreads: [{ kind: 'cover', pages: [1], block: 'network', intent: 'i' }] }, outlineSchema()), []);
   assert.deepEqual(fits({ title: 'T', spreads: [{ pages: [1], block: 'timeline', intent: 'i' }] }, outlineSchema()), ['$.spreads[0].block: "timeline" not allowed']);
 });

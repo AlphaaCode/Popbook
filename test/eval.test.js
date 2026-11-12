@@ -19,7 +19,7 @@ test('eval: one row per pdf × provider, results.csv written, books cleaned up',
     assert.equal(rows.length, 1);
     const r = rows[0];
     assert.equal(r.pdf, 'Tiny Course.pdf'); assert.equal(r.preset, 'mock:balanced');
-    assert.equal(r.validFirstTry, 1); assert.equal(r.repairs, 0); assert.equal(r.calls, 7); assert.equal(r.spreads, 6); // an outline, then one call per spread
+    assert.equal(r.validFirstTry, 1); assert.equal(r.repairs, 0); assert.equal(r.calls, 3); assert.equal(r.spreads, 6); // an outline, then one call per 3 spreads
     assert.ok(r.inputTokens > 0 && r.outputTokens > 0 && r.estInput > 0);
     assert.equal(r.error, '');
 

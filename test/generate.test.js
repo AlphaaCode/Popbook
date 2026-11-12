@@ -19,17 +19,21 @@ const job = (provider, extra = {}) => { const slug = `test-gen-${process.pid}-${
   return { provider, slug, fileName: 'x.pdf', totalPages: 2, range: [1, 2], pages: [{ n: 1, text: 'Amdahl' }, { n: 2, text: 'Gustafson' }], lang: 'auto', cache: false, ...extra }; };
 const fake = extra => job('compat', { baseUrl: base, model: 'm', ...extra });
 
-// A fake server that answers by task: reply(task, n) gives the n-th answer (0-based) to 'outline' or to spread k. Each answer reports
-// usage like the real API; every request is kept in `sent` as { task, body }.
+// A fake server that answers by task: reply(task) gets 'outline' or the spread numbers a writer call asks for. answers() gives
+// spread k its n-th answer (0-based, counting every call that asked for it). Each answer reports usage like the real API; every
+// request is kept in `sent` as { task, body }. A reply that throws answers 400, so a broken test fails instead of hanging.
 let server, base, reply, sent = [];
 const sse = evs => evs.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
-const taskOf = body => { const t = JSON.stringify(body); return /Task: outline/.test(t) ? 'outline' : +/Task: spread (\d+)\//.exec(t)?.[1]; };
 const userText = body => { const c = body.messages.at(-1).content; return typeof c === 'string' ? c : c.filter(x => x.type === 'text').map(x => x.text).join('\n\n'); };
-const of = task => sent.filter(s => s.task === task);
-const answers = (spreads, outline = OUTLINE) => (task, n) => task === 'outline' ? outline : JSON.stringify(spreads[task - 1](n));
+const taskOf = body => { const t = userText(body); return /^Task: outline/m.test(t) ? 'outline' : [...t.matchAll(/^- spread (\d+)/gm)].map(m => +m[1]); };
+const of = task => sent.filter(s => task === 'outline' ? s.task === 'outline' : Array.isArray(s.task) && s.task.includes(task));
+const answers = (spreads, outline = OUTLINE) => task => task === 'outline' ? outline : JSON.stringify({ spreads: task.map(k => spreads[k - 1](of(k).length)) });
+const each = f => task => task === 'outline' ? OUTLINE : JSON.stringify({ spreads: task.map(f) }); // one fixed answer per spread number
 before(async () => {
   server = http.createServer((req, res) => { let body = ''; req.on('data', c => body += c); req.on('end', () => {
-    const b = JSON.parse(body), task = taskOf(b), text = reply(task, of(task).length); sent.push({ task, body: b });
+    const b = JSON.parse(body), task = taskOf(b); let text;
+    try { text = reply(task); } catch (e) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: { message: 'test reply failed: ' + e.message } })); }
+    sent.push({ task, body: b });
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     if (req.url.startsWith('/v1/messages')) return res.end(sse([{ type: 'message_start', message: { usage: { input_tokens: 1000, output_tokens: 1 } } },
       { type: 'content_block_delta', delta: { type: 'text_delta', text } }, { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 200 } }]));
@@ -40,66 +44,76 @@ before(async () => {
 });
 after(async () => { server.close(); for (const s of slugs) await fs.rm(path.join(BOOKS, s), { recursive: true, force: true }); });
 
-test('mock provider: an outline call, then one call per spread; usage in the log, book.json and outline.json', async () => {
+test('mock provider: an outline call, then one call per 3 neighbouring spreads; usage in the log, book.json and outline.json', async () => {
   const lines = [], j = job('mock');
   const book = await generate(j, m => lines.push(m));
   assert.equal(book.spreads.length, 6);
-  assert.deepEqual([book.source.calls, book.source.repairs], [7, 0]);
+  assert.deepEqual([book.source.calls, book.source.repairs], [3, 0]);
   assert.ok(book.source.usage.input > 0 && book.source.usage.output > 0);
-  assert.ok(lines.some(l => /Outline: answer in .*in [\d,]+ · out [\d,]+/.test(l)) && lines.some(l => l.startsWith('Total usage over 7 calls')));
+  assert.ok(lines.some(l => /Outline: answer in .*in [\d,]+ · out [\d,]+/.test(l)) && lines.some(l => l.startsWith('Total usage over 3 calls')));
   const saved = JSON.parse(await fs.readFile(path.join(BOOKS, j.slug, 'book.json'), 'utf8'));
   assert.deepEqual(saved.source.usage, book.source.usage);
   const outline = JSON.parse(await fs.readFile(path.join(BOOKS, j.slug, 'outline.json'), 'utf8'));
   assert.deepEqual(outline.spreads.map(s => s.block), EX.spreads.map(s => s.scene.type));
 });
 
-test('stages: the planner reads every page; each writer gets only its pages and its block spec, after a shared prefix', async () => {
-  reply = answers([() => COVER, () => BARS]); sent = [];
-  const lines = [], book = await generate(fake({ extra: 'Prefer plots.' }), m => lines.push(m));
-  assert.deepEqual(book.spreads.map(s => s.scene.type), ['network', 'bars']);
-  assert.deepEqual([book.source.calls, book.source.repairs], [3, 0]);
-  const [o] = of('outline'), [w1] = of(1), [w2] = of(2), prompts = await loadPrompts();
+const OUTLINE4 = JSON.stringify({ title: EX.title, lang: 'fr', spreads: [{ kind: 'cover', pages: [1], block: 'network', intent: 'the course' },
+  { pages: [2], block: 'bars', intent: "Moore's law" }, { pages: [3], block: 'bars', intent: 'clock' }, { pages: [4], block: 'bars', intent: 'cores' }] });
+const PAGES4 = ['Amdahl', 'Gustafson', 'Moore', 'Dennard'].map((text, i) => ({ n: i + 1, text }));
+
+test('stages: the planner reads every page; a writer call writes neighbouring spreads from only their pages and blocks, after a shared prefix', async () => {
+  reply = answers([() => COVER, () => BARS, () => BARS, () => BARS], OUTLINE4); sent = [];
+  const lines = [], book = await generate(fake({ extra: 'Prefer plots.', pages: PAGES4, range: [1, 4], totalPages: 4 }), m => lines.push(m));
+  assert.deepEqual(book.spreads.map(s => s.scene.type), ['network', 'bars', 'bars', 'bars']);
+  assert.deepEqual([book.source.calls, book.source.repairs], [3, 0]); // an outline, then 2 writer calls of 2 spreads
+  const [o] = of('outline'), [w1] = of(1), [w2] = of(3), prompts = await loadPrompts();
+  assert.deepEqual([of(2), of(4)], [[w1], [w2]]);
   assert.equal(o.body.messages[0].content, prompts.planner); // each step its own rules…
   for (const s of [w1, w2]) assert.equal(s.body.messages[0].content, prompts.writer); // …the same for every writer: one cached prefix
-  const sch = s => s.body.response_format.json_schema.schema; // structured output: the outline's schema, each writer its block's
-  assert.deepEqual([sch(o).required, sch(w1).properties.scene.properties.type.enum, sch(w2).properties.scene.properties.type.enum], [['title', 'spreads'], ['network'], ['bars']]);
-  assert.ok(!sch(w1).properties.quiz && sch(w2).properties.quiz); // the cover's schema has no quiz
+  const sch = s => s.body.response_format.json_schema.schema; // structured output: the outline's schema, a writer's {spreads: […]}
+  const kinds = s => { const it = sch(s).properties.spreads.items; return (it.anyOf || [it]).map(x => [!!x.properties.quiz, x.properties.scene.properties.type.enum]); };
+  assert.deepEqual(sch(o).required, ['title', 'spreads']);
+  assert.deepEqual(kinds(w1), [[false, ['network']], [true, ['bars']]]); // the cover's schema has no quiz
   const ot = userText(o.body);
-  assert.ok(ot.includes('=== Page 1 ===\nAmdahl') && ot.includes('=== Page 2 ===\nGustafson') && ot.includes('Prefer plots.'));
+  assert.ok(ot.includes('=== Page 1 ===\nAmdahl') && ot.includes('=== Page 4 ===\nDennard') && ot.includes('Prefer plots.'));
   assert.ok(!Object.values(prompts.blocks).some(spec => ot.includes(spec))); // the planner needs the table, not the specs
   const t1 = userText(w1.body), t2 = userText(w2.body);
-  assert.ok(t2.includes('=== Page 2 ===') && !t2.includes('=== Page 1 ===')); // only its own pages
-  assert.ok(t2.includes(prompts.blocks.bars) && !t2.includes(prompts.blocks.network) && t1.includes(prompts.blocks.network));
+  assert.ok(t1.includes('=== Page 2 ===') && !t1.includes('=== Page 3 ===') && t2.includes('=== Page 3 ===\nMoore') && !t2.includes('=== Page 2 ===')); // only their pages
+  assert.ok(t1.includes(prompts.blocks.network) && t1.includes(prompts.blocks.bars) && t2.includes(prompts.blocks.bars) && !t2.includes(prompts.blocks.network));
   const outlineText = t1.slice(0, t1.indexOf('Scene block'));
   assert.ok(outlineText.startsWith('Book outline: "') && t2.startsWith(outlineText)); // the outline: identical bytes for every writer
-  assert.ok(t2.indexOf('=== Page 2') < t2.indexOf('Task: spread 2/2') && t2.indexOf('Task:') < t2.indexOf('Prefer plots.')); // the task comes last
-  assert.ok(lines.some(l => /^Outline: ".*", 2 spreads — p\. 1 cover\/network · p\. 2 bars$/.test(l)));
+  assert.match(t2, /Task: spreads 3, 4 of 4\.\n.*\n- spread 3: pages 3, block "bars", intent: clock\n- spread 4: pages 4, block "bars"/);
+  assert.ok(t2.indexOf('=== Page 4') < t2.indexOf('Task:') && t2.indexOf('Task:') < t2.indexOf('Prefer plots.')); // the task comes last
+  assert.ok(lines.some(l => /^Outline: ".*", 4 spreads — p\. 1 cover\/network · p\. 2 bars · p\. 3 bars · p\. 4 bars$/.test(l)));
+  assert.equal(lines.filter(l => /^Spread \d\/4 ✓/.test(l)).length, 4); // the studio's progress counts spreads, not calls
 });
 
 test('autofix: a spread with fixable mistakes costs no repair', async () => {
   const sloppy = { ...structuredClone(BARS), id: 'x', note: 'extra' }; sloppy.quiz.a = String(sloppy.quiz.a); sloppy.scene.type = 'Bar'; sloppy.scene.colour = 'red';
-  reply = answers([() => COVER, () => ({ spreads: [sloppy] })]); sent = [];
+  reply = answers([() => COVER, () => sloppy]); sent = [];
   const book = await generate(fake(), () => {});
-  assert.deepEqual([book.source.calls, book.source.repairs], [3, 0]);
+  assert.deepEqual([book.source.calls, book.source.repairs], [2, 0]);
   assert.equal(book.spreads[1].scene.type, 'bars'); assert.equal(book.spreads[1].note, undefined);
 });
 
-test('a repair resends only that spread, with its errors and its fixed answer', async () => {
+test('a spread that fails in a shared call is repaired on its own: its pages, its errors and its fixed answer', async () => {
   const bad = structuredClone(BARS); bad.quiz.a = 9;
   reply = answers([() => COVER, n => n ? BARS : bad]); sent = [];
   const lines = [], book = await generate(fake(), m => lines.push(m));
-  assert.deepEqual([book.source.calls, book.source.repairs], [4, 1]);
-  assert.deepEqual(book.source.usage, { input: 4000, cachedInput: 400, output: 800, reasoning: 0 });
+  assert.deepEqual([book.source.calls, book.source.repairs], [3, 1]);
+  assert.deepEqual(book.source.usage, { input: 3000, cachedInput: 300, output: 600, reasoning: 0 });
   assert.equal(of(1).length, 1); // the other spread is not written again
-  const [first, repair] = of(2).map(s => userText(s.body)), note = repair.slice(first.length);
-  assert.ok(repair.startsWith(first)); // same prefix, so a cache hit; only the note is new
+  const repair = userText(of(2)[1].body), note = repair.slice(repair.indexOf('Your previous answer was rejected'));
+  assert.ok(repair.includes('Task: spread 2/2.') && repair.includes('=== Page 2 ===') && !repair.includes('=== Page 1 ===')); // a call of its own
+  assert.ok(repair.startsWith(userText(of(2)[0].body).slice(0, repair.indexOf('Scene block')))); // the shared outline prefix
   assert.match(note, /- spread\.quiz\.a: must be the 0-based index/);
   assert.ok(note.includes(JSON.stringify(BARS.title)) && !note.includes(JSON.stringify(COVER.title))); // that spread's JSON, not the others
-  assert.ok(lines.some(l => l.startsWith('Spread 2/2 repair 1 → ')));
+  assert.ok(lines.some(l => l.startsWith('Spread 2/2 repair 1 → ')) && lines.some(l => l.startsWith('Spread 1/2 ✓')));
   sent = [];
-  reply =(t, n) => t === 'outline' ? OUTLINE : t === 1 ? JSON.stringify(COVER) : n ? JSON.stringify(BARS) : 'sorry, no json: ' + 'x'.repeat(5000);
-  await generate(fake(), () => {});
-  assert.ok(!userText(of(2)[1].body).includes('sorry')); // an unusable answer is not echoed back either
+  reply = task => task === 'outline' ? OUTLINE : task.length > 1 ? 'sorry, no json: ' + 'x'.repeat(5000) : JSON.stringify({ spreads: [task[0] === 1 ? COVER : BARS] });
+  const b2 = await generate(fake(), () => {});
+  assert.deepEqual([b2.source.calls, b2.source.repairs], [4, 2]); // an unusable shared answer: each spread repaired on its own
+  assert.ok(userText(of(2)[1].body).includes('did not return JSON') && !userText(of(2)[1].body).includes('sorry')); // not echoed back
 });
 
 test('escalation: the third try goes to the planner model', async () => {
@@ -108,7 +122,7 @@ test('escalation: the third try goes to the planner model', async () => {
   const lines = [], book = await generate(fake({ plannerModel: 'big' }), m => lines.push(m));
   assert.deepEqual(of(2).map(s => s.body.model), ['m', 'm', 'big']);
   assert.equal(of('outline')[0].body.model, 'big'); // the planner writes the outline
-  assert.deepEqual([book.source.calls, book.source.repairs, book.source.plannerModel], [5, 2, 'big']);
+  assert.deepEqual([book.source.calls, book.source.repairs, book.source.plannerModel], [4, 2, 'big']);
   assert.ok(lines.some(l => l.startsWith('Spread 2/2 escalated → ')) && !book.spreads[1].fallback);
 });
 
@@ -116,7 +130,7 @@ test('fallback: a spread that never validates is written by code from its pages,
   const bad = structuredClone(BARS); bad.scene.items = [bad.scene.items[0]]; // bars needs 2–7 items
   reply = answers([() => COVER, () => bad]); sent = [];
   const lines = [], j = fake(), book = await generate(j, m => lines.push(m));
-  assert.deepEqual([book.source.calls, book.source.repairs], [5, 2]);
+  assert.deepEqual([book.source.calls, book.source.repairs], [4, 2]);
   assert.equal(book.spreads[1].scene.type, 'stack'); assert.deepEqual(book.spreads[1].fallback, ['scene']);
   assert.equal(book.spreads[1].title, BARS.title); // the rest of the model's spread was fine and is kept
   assert.ok(validateBook(await fs.readFile(path.join(BOOKS, j.slug, 'book.json'), 'utf8')).ok);
@@ -132,10 +146,11 @@ test('an outline that never validates stops the run, and the run still reports w
   });
 });
 
-test('output caps: ~2 000 for a 10-page outline, 1 500 per spread, plus room to think', async () => {
+test('output caps: ~2 000 for a 10-page outline, 1 500 per spread of the call, plus room to think', async () => {
   const g = roles({ provider: 'gemini', preset: 'balanced' });
   assert.equal(outlineCap(roles({ provider: 'anthropic' }).planner, 10), 2000); // Claude does not think unasked
   assert.equal(spreadCap(g.writer), 1500 + 1024); // gemini-3.8-flash: its low thinking budget
+  assert.equal(spreadCap(g.writer, 3), 4500 + 1024); // three spreads in one answer, thinking once
   assert.equal(outlineCap(g.planner, 10), 2000 + 4096); // gemini-4-argon plans at medium
   assert.equal(spreadCap(roles({ provider: 'openai' }).writer), 1500 + 8000); // an effort has no fixed size
   process.env.SPREAD_MAX_TOKENS = '1000';
@@ -143,7 +158,7 @@ test('output caps: ~2 000 for a 10-page outline, 1 500 per spread, plus room to 
   reply = answers([() => COVER, () => BARS]); sent = [];
   const j = fake(), r = roles(j); await generate(j, () => {});
   assert.equal(of('outline')[0].body.max_tokens, outlineCap(r.planner, 2));
-  assert.equal(of(2)[0].body.max_tokens, spreadCap(r.writer));
+  assert.equal(of(2)[0].body.max_tokens, spreadCap(r.writer, 2));
 });
 
 test('input: text plus images of the figure pages; the planner sees only the pages without text; native PDF only at high fidelity', async () => {
@@ -155,7 +170,7 @@ test('input: text plus images of the figure pages; the planner sees only the pag
   reply = answers([() => COVER, () => BARS]); sent = [];
   await anth();
   assert.deepEqual(media(of('outline')[0]), ['image']); // page 2 has no text: the planner must see it; page 1's text is enough
-  assert.deepEqual([media(of(1)[0]), media(of(2)[0])], [['image'], ['image']]); // each writer: its own figure page
+  assert.deepEqual(media(of(2)[0]), ['image', 'image']); // the writer of both spreads: their figure pages
   assert.deepEqual(of(2)[0].body.messages[0].content[0].cache_control, { type: 'ephemeral' }); // the shared outline is a cached prefix
   sent = []; await anth({ fidelity: 'high' });
   assert.deepEqual([media(of('outline')[0]), media(of(2)[0])], [['document'], ['document']]);
@@ -178,19 +193,19 @@ test('result cache: the same pages again cost nothing, a changed model misses it
   try {
     reply = answers([() => COVER, () => BARS]); sent = [];
     const a = await generate(fake({ pages, cache: true }), () => {});
-    assert.equal(sent.length, 3);
+    assert.equal(sent.length, 2);
     sent = []; const lines = [], b = await generate(fake({ pages, cache: true }), m => lines.push(m));
     assert.equal(sent.length, 0);
     assert.deepEqual([b.source.calls, b.source.usage], [0, { input: 0, cachedInput: 0, output: 0, reasoning: 0 }]);
     assert.deepEqual(b.spreads, a.spreads);
-    assert.ok(lines.filter(l => /from the result cache/.test(l)).length === 3 && lines.some(l => l.startsWith('Spread 2/2 ✓'))); // the studio's progress still counts it
+    assert.ok(lines.filter(l => /from the result cache/.test(l)).length === 2 && lines.some(l => l.startsWith('Spread 2/2 ✓'))); // the studio's progress still counts it
     sent = []; await generate(fake({ pages, cache: true, model: 'm2' }), () => {});
-    assert.equal(sent.length, 2); // a new writer: both spreads again; the planner did not change, so its outline still holds
+    assert.equal(sent.length, 1); // a new writer: both spreads again; the planner did not change, so its outline still holds
   } finally { for (const f of await fs.readdir(CACHE)) if (!known.has(f)) await fs.rm(path.join(CACHE, f)); }
 });
 
 test('outline review: the spreads written are the edited outline\'s, in its order', async () => {
-  reply = (t, n) => t === 'outline' ? OUTLINE : JSON.stringify(t === 1 ? BARS : COVER); sent = [];
+  reply = each(k => k === 1 ? BARS : COVER); sent = [];
   let seen = null;
   const review = async o => { seen = structuredClone(o); return { ...o, title: 'Edited', spreads: [{ ...o.spreads[1], intent: 'growth' }] }; };
   const lines = [], j = fake({ review }), book = await generate(j, m => lines.push(m));
@@ -232,12 +247,12 @@ test('roles: the preset picks a tier per role, .env may route a role to another 
 });
 
 test('a role routed to another provider is called there; book.source records both roles', async () => {
-  reply = (task) => task === 'outline' ? OUTLINE : JSON.stringify(EX.spreads[task - 1]); sent = [];
+  reply = each(k => EX.spreads[k - 1]); sent = [];
   process.env.PLANNER_MODEL = 'mock:mock';
   try {
     const book = await generate(fake(), () => {}); // compat writers, a mock planner (the example book's outline)
     assert.equal(of('outline').length, 0); // the outline never reached the job's server
-    assert.equal(sent.length, EX.spreads.length); // its spreads did
+    assert.equal(sent.length, 2); // its 6 spreads did, 3 per call
     assert.deepEqual([book.source.model, book.source.plannerModel], ['m', 'mock:mock']);
   } finally { delete process.env.PLANNER_MODEL; }
   reply = answers([() => COVER, () => BARS]); sent = [];

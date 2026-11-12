@@ -15,11 +15,11 @@ const role = (provider, model, reasoning) => ({ provider, model, reasoning });
 const argon = role('gemini', 'gemini-4-argon'), both = r => ({ planner: r, writer: r });
 const base = { prompts, pages: pages(20), range: [1, 20], ...both(argon) };
 
-test('estimate: one outline call plus one writer call per expected spread', () => {
+test('estimate: one outline call plus one writer call per 3 expected spreads', () => {
   const e = estimate(base);
   assert.equal(e.spreads, 12); // 0.6 per page
-  assert.equal(e.calls, 13);
-  assert.ok(e.input > 13 * countTokens(prompts.core)); // the rules go with every call (uncached: the upper bound)
+  assert.equal(e.calls, 5);
+  assert.ok(e.input > 5 * countTokens(prompts.core)); // the rules go with every call (uncached: the upper bound)
   assert.ok(estimate({ ...base, range: [1, 10] }).input < e.input / 1.5); // only the selected pages
   assert.equal(estimate({ ...base, pages: pages(1), range: [1, 1] }).calls, 2);
 });
@@ -42,8 +42,8 @@ test('estimate: models that think are charged for it, at their role budget', () 
   assert.ok(estimate(base).reasoning > 0 && estimate({ ...base, ...opus }).reasoning === 0);
   assert.ok(estimate(base).output > estimate({ ...base, ...opus }).output);
   const flash = role('gemini', 'gemini-3.8-flash', { budget: 1024 });
-  assert.equal(estimate({ ...base, ...both(flash) }).reasoning, 13 * 1024); // its thinking budget, once per call
-  assert.equal(estimate({ ...base, planner: { ...flash, reasoning: { budget: 4096 } }, writer: flash }).reasoning, 4096 + 12 * 1024);
+  assert.equal(estimate({ ...base, ...both(flash) }).reasoning, 5 * 1024); // its thinking budget, once per call
+  assert.equal(estimate({ ...base, planner: { ...flash, reasoning: { budget: 4096 } }, writer: flash }).reasoning, 4096 + 4 * 1024);
   assert.ok(estimate({ ...base, ...both(role('gemini', 'gemini-9-unlisted')) }).reasoning > 0); // no budget: the measured default ratio
 });
 
