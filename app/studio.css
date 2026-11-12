@@ -10,7 +10,7 @@ code{font-size:.86em;background:rgba(31,29,26,.07);padding:1px 4px;border-radius
 
 header{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 28px;max-width:1180px;margin:0 auto}
 .brand{display:flex;align-items:center;gap:12px}
-.logo{font-size:30px;line-height:1}
+.logo{width:40px;height:40px;display:block}
 .brand b{font:400 28px/1 "Instrument Serif",serif;display:block}
 .brand small{font:11px "JetBrains Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 nav{display:flex;gap:18px;font:600 12px "JetBrains Mono",monospace}

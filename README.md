@@ -1,3 +1,5 @@
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-dark.png"><img src="docs/brand/wordmark.png" alt="PopBook" width="460"></picture></p>
+
 # PopBook Studio
 
 [![CI](https://github.com/AlphaaCode/Popbook/actions/workflows/ci.yml/badge.svg)](https://github.com/AlphaaCode/Popbook/actions/workflows/ci.yml)
