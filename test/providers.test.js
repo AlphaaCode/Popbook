@@ -3,7 +3,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { callModel, describeClaudeEvent, claudeUsage, addUsage, emptyUsage, fmtUsage } from '../lib/providers.js';
+import { callModel, describeClaudeEvent, claudeUsage, addUsage, emptyUsage, fmtUsage, RETRY } from '../lib/providers.js';
+RETRY.delays = [1, 1, 1]; // retries in milliseconds, not seconds
 
 const sse = events => events.map(e => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join('');
 const STREAMS = {
@@ -20,10 +21,13 @@ let server, base, seen = {}, requests = [];
 before(async () => {
   server = http.createServer((req, res) => {
     let body = ''; req.on('data', c => body += c); req.on('end', () => {
-      const path = req.url.split('?')[0]; seen[path] = { headers: req.headers, body: JSON.parse(body) };
+      let path = req.url.split('?')[0]; seen[path] = { headers: req.headers, body: JSON.parse(body) };
       requests.push({ path, schema: !!seen[path].body.response_format });
       if (path === '/noschema/chat/completions' && seen[path].body.response_format) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"response_format json_schema is not supported"}}'); }
       if (path === '/fail/chat/completions') { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"bad key"}}'); }
+      if (path === '/flaky/chat/completions' && requests.filter(q => q.path === path).length <= 2) { res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '0.2' }); return res.end('{"error":{"message":"high demand"}}'); }
+      if (path === '/busy/chat/completions') { res.writeHead(429, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"slow down","details":[{"retryDelay":"0.1s"}]}}'); }
+      if (path === '/flaky/chat/completions') path = '/chat/completions';
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       // split the stream at an awkward place to test buffering across chunks
       const s = STREAMS[path] || ''; res.write(s.slice(0, 17)); setTimeout(() => res.end(s.slice(17)), 5);
@@ -114,6 +118,25 @@ test('claude-cli: claude -p without tools, our system prompt from a file, the sc
     assert.deepEqual(usage, { input: 15, cachedInput: 5, output: 7, reasoning: 0 });
     await assert.rejects(callModel('claude-cli', { system: 's', parts: [{ type: 'text', text: 'fail' }] }), /-p failed.*overloaded/);
   } finally { delete process.env.CLAUDE_CLI_CMD; }
+});
+
+test('a transient failure is tried again: Retry-After respected, 3 retries at most, a 4xx about the request never', async () => {
+  requests = []; const notes = [], t0 = Date.now();
+  const r = await callModel('compat', { system: 's', parts, baseUrl: base + '/flaky', model: 'x', onNote: n => notes.push(n) });
+  assert.equal(r.text, '{"title":"B"}'); // two 503s, then the answer
+  assert.ok(Date.now() - t0 >= 380, 'waited Retry-After (0.2 s) twice'); // longer than RETRY.delays
+  assert.equal(notes.length, 2); assert.match(notes[0], /^503 .*high demand — trying again in 0 s \(1\/3\)/);
+  requests = []; const t1 = Date.now();
+  await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/busy', model: 'x' }), /^Error: 429 .*slow down/);
+  assert.equal(requests.length, 4); assert.ok(Date.now() - t1 >= 280); // Gemini's retryDelay in the body counts as Retry-After
+  requests = [];
+  await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/fail', model: 'x' }), /401/);
+  assert.equal(requests.length, 1);
+  const closed = http.createServer(); await new Promise(r => closed.listen(0, '127.0.0.1', r)); const port = closed.address().port; closed.close();
+  const n = []; await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: `http://127.0.0.1:${port}`, model: 'x', onNote: m => n.push(m) }), /fetch failed/);
+  assert.equal(n.length, 3); // a refused connection: 3 retries
+  const ac = new AbortController(); RETRY.delays = [5000]; setTimeout(() => ac.abort(), 50);
+  try { await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/busy', model: 'x', signal: ac.signal }), /abort/i); } finally { RETRY.delays = [1, 1, 1]; } // cancel stops the wait
 });
 
 test('HTTP errors surface the provider message', async () => {

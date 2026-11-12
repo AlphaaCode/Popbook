@@ -86,6 +86,8 @@ Routing and weak models (v0.2 phase 4):
   the files to read and forbids opening the PDF or exploring the repo. Claude Code and Gemini CLI get `--model` per preset.
 
 ### Fixed
+- One transient error no longer kills a build: a 429, a 5xx or a dropped connection is tried again up to 3 times, after 2 s,
+  8 s and 20 s, or longer when the server's `Retry-After` (Gemini: `retryDelay`) asks for it, up to 60 s. The log says so.
 - Photos of pages never reached Claude or Gemini (the image switch was hidden and off for providers that read PDFs).
 - The studio's estimate now refreshes when the model, pages per call or image options change.
 - A scene list of strings or a missing list (`"items": ["a", "b"]`) crashed validation instead of being reported as an
