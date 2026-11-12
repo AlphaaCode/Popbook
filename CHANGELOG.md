@@ -5,6 +5,9 @@ All notable changes to PopBook Studio are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+- New PopBook logo (an open book with a paper pop-up), favicon for the studio and viewer, and brand files in `docs/brand/`: logo SVGs, wordmarks, app icon, avatar and social preview.
+
 ## [0.1.1] — 2026-11-04
 
 ### Added
