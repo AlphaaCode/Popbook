@@ -74,6 +74,7 @@ test('stages: the planner reads every page; a writer call writes neighbouring sp
   const kinds = s => { const it = sch(s).properties.spreads.items; return (it.anyOf || [it]).map(x => [!!x.properties.quiz, x.properties.scene.properties.type.enum]); };
   assert.deepEqual(sch(o).required, ['title', 'spreads']);
   assert.deepEqual(kinds(w1), [[false, ['network']], [true, ['bars']]]); // the cover's schema has no quiz
+  assert.deepEqual(sch(w2), sch(w1)); // one writer schema per book: it heads the cached prefix, so every writer shares it
   const ot = userText(o.body);
   assert.ok(ot.includes('=== Page 1 ===\nAmdahl') && ot.includes('=== Page 4 ===\nDennard') && ot.includes('Prefer plots.'));
   assert.ok(!Object.values(prompts.blocks).some(spec => ot.includes(spec))); // the planner needs the table, not the specs
@@ -86,6 +87,7 @@ test('stages: the planner reads every page; a writer call writes neighbouring sp
   assert.ok(t2.indexOf('=== Page 4') < t2.indexOf('Task:') && t2.indexOf('Task:') < t2.indexOf('Prefer plots.')); // the task comes last
   assert.ok(lines.some(l => /^Outline: ".*", 4 spreads — p\. 1 cover\/network · p\. 2 bars · p\. 3 bars · p\. 4 bars$/.test(l)));
   assert.equal(lines.filter(l => /^Spread \d\/4 ✓/.test(l)).length, 4); // the studio's progress counts spreads, not calls
+  assert.ok(lines.findIndex(l => l.startsWith('Spread 2/4 ✓')) < lines.findIndex(l => l.startsWith('Spreads 3–4/4 → '))); // the first writer call alone: it fills the cache
 });
 
 test('autofix: a spread with fixable mistakes costs no repair', async () => {
