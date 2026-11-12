@@ -109,6 +109,7 @@ const fits = (v, s, at = '$') => {
   const t = Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v;
   if (t !== s.type && !(s.type === 'number' && t === 'integer')) return [`${at}: ${t}, not ${s.type}`];
   if (s.enum && !s.enum.includes(v)) return [`${at}: "${v}" not allowed`];
+  if (s.exclusiveMinimum != null && !(v > s.exclusiveMinimum)) return [`${at}: ${v} not > ${s.exclusiveMinimum}`];
   if (t === 'array') return [...(v.length < (s.minItems ?? 0) || v.length > (s.maxItems ?? Infinity) ? [`${at}: ${v.length} items`] : []),
     ...v.flatMap((x, i) => fits(x, s.items, `${at}[${i}]`))];
   if (t !== 'object') return [];
@@ -129,6 +130,8 @@ test('schemas: every spread of the example books fits its block\'s schema and th
   assert.deepEqual(fits({ ...noQuiz, extra: 1 }, flow), ['$.quiz: missing', '$.extra: unknown']);
   assert.deepEqual(fits({ ...s, scene: { type: 'flow', steps: [{ label: 'a' }] } }, flow), ['$.scene.steps: 1 items']);
   assert.ok(fits({ ...s, scene: { type: 'bars', items: [] } }, flow).includes('$.scene.type: "bars" not allowed'));
+  const race = lesson({ type: 'race', items: [{ label: 'x', a: 0, b: 2 }] });
+  assert.deepEqual(fits(race, spreadSchema('race')), ['$.scene.items[0].a: 0 not > 0']); // a race time must be positive, as validateBook says
   assert.deepEqual(spreadSchema(null).properties.scene.anyOf.map(x => x.properties.type.enum[0]), API_BLOCKS);
   assert.deepEqual(fits({ title: 'T', spreads: [{ kind: 'cover', pages: [1], block: 'network', intent: 'i' }] }, outlineSchema()), []);
   assert.deepEqual(fits({ title: 'T', spreads: [{ pages: [1], block: 'timeline', intent: 'i' }] }, outlineSchema()), ['$.spreads[0].block: "timeline" not allowed']);

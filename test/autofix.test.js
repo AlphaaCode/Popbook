@@ -26,6 +26,13 @@ test('autofix drops nothing the engine uses: both example books come out identic
   }
 });
 
+test('fixSpread: a race time of 0 or less becomes positive, its number kept as the label', () => {
+  const s = byType('race'); s.scene.items = [{ label: 'x', a: 0, b: 300 }, { label: 'y', a: -5, b: '2', bText: 'two days' }, { label: 'z', a: 0, b: 0 }];
+  const f = fixSpread(s, { block: 'race' }), it = f.scene.items;
+  assert.deepEqual(it.map(i => [i.a, i.b, i.aText, i.bText]), [[3, 300, '0', undefined], [5, 2, '-5', 'two days'], [0.01, 0.01, '0', '0']]);
+  assert.ok(validateSpread(f).ok);
+});
+
 test('fixSpread: unknown keys dropped, numbers coerced, ranges clamped, the outline decides kind and block', () => {
   const s = byType('model');
   Object.assign(s, { kind: 'cover', extra: 1, title: 'A '.repeat(60) + 'end', formula: 'P = C V² f' });

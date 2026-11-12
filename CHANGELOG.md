@@ -88,6 +88,8 @@ Routing and weak models (v0.2 phase 4):
 ### Fixed
 - One transient error no longer kills a build: a 429, a 5xx or a dropped connection is tried again up to 3 times, after 2 s,
   8 s and 20 s, or longer when the server's `Retry-After` (Gemini: `retryDelay`) asks for it, up to 60 s. The log says so.
+- A race time of 0 or less cost a repair call: the schema now asks for `a`, `b` (and a bars `value`) greater than 0
+  (`exclusiveMinimum`), and autofix turns one that slips through into a positive number, keeping the model's number as its label.
 - Photos of pages never reached Claude or Gemini (the image switch was hidden and off for providers that read PDFs).
 - The studio's estimate now refreshes when the model, pages per call or image options change.
 - A scene list of strings or a missing list (`"items": ["a", "b"]`) crashed validation instead of being reported as an
