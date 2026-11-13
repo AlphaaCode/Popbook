@@ -131,6 +131,32 @@ appended as the last argument.
 
 **Testing without any AI:** `POPBOOK_MOCK=1 npm start` adds a *Mock* provider that returns the example book.
 
+## Cost
+
+Measured with `npm run eval` on pages 1–10 of two course PDFs, one run each (`eval/`); the studio's estimate predicts them
+for your own pages before you build.
+
+**Gemini, gemini-3.8-flash: v0.1 vs the single-call path** (Budget's path, measured when it was built):
+
+| PDF | v0.1 | v0.2 single call | |
+|---|---|---|---|
+| Claude-Call-Me-Guide | $0.047 · 14.3k in / 9.6k out | $0.015 · 13.8k in / 1.3k out | 3.1× cheaper |
+| coursCalculParallel2025 | $0.046 · 10.1k in / 10.2k out | $0.017 · 8.6k in / 2.7k out | 2.7× cheaper |
+
+Most of the saving is output: v0.1 let the model think at will. Budget's length guidance, added since, made one book's output
+46 % longer on gemini-3.6-flash, which thinks at its own default level.
+
+**Claude Code (`claude -p`), haiku for every role: Budget vs Balanced.** Your Claude plan pays, so tokens only:
+
+| PDF | Budget | Balanced |
+|---|---|---|
+| Claude-Call-Me-Guide | 1 request · 13.3k in / 9.4k out · 44 s · 6 spreads | 4 requests · 38.3k in / 17.0k out · 61 s · 8 spreads |
+| coursCalculParallel2025 | 1 request · 7.8k in / 10.7k out · 47 s · 5 spreads | 3 requests · 34.5k in / 18.0k out · 82 s · 5 spreads |
+
+Free Gemini keys allow about 20 requests a day per model; one 10-page book uses 1.
+
+Untested: caching and cost on the Claude API and OpenAI with real keys. The figures above are Gemini and `claude -p` only.
+
 ## Agent mode (no studio)
 
 Open this folder in Claude Code (CLI or desktop) and run:

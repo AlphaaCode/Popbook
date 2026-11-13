@@ -5,6 +5,12 @@ All notable changes to PopBook Studio are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-13
+
+Token-efficient generation. *Budget* (the default with Gemini and local models) writes a 10-page book in one request, about
+3× cheaper than v0.1 on gemini-3.8-flash; *Balanced* and *Best* plan an outline, then write two or three spreads per call,
+with repairs per spread, outline review and *regenerate this spread*. Measured costs: README, "Cost".
+
 ### Added
 - **Token measurement** (v0.2 phase 1). Every provider now reports token usage (`input`, `cachedInput`, `output`,
   `reasoning`): Claude API, OpenAI, Gemini and OpenAI-compatible servers from their own usage fields, Claude Code from its
@@ -143,6 +149,7 @@ First public release.
 - **Single-file HTML export**, CLI tools (`check`, `pages`, `export`) and unit tests.
 - Example books: `calcul-parallele` and `blocks-demo`.
 
-[Unreleased]: https://github.com/AlphaaCode/Popbook/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/AlphaaCode/Popbook/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/AlphaaCode/Popbook/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/AlphaaCode/Popbook/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/AlphaaCode/Popbook/releases/tag/v0.1.0
