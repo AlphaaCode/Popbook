@@ -24,6 +24,13 @@ test('estimate: one outline call plus one writer call per 3 expected spreads', (
   assert.equal(estimate({ ...base, pages: pages(1), range: [1, 1] }).calls, 2);
 });
 
+test('estimate: Budget is one call per 15 pages with all the rules and block specs, and no outline', () => {
+  const single = { ...prompts, single: prompts.core + ' race '.repeat(100) }, s = estimate({ ...base, prompts: single, path: 'single' }), st = estimate({ ...base, prompts: single });
+  assert.deepEqual([s.path, s.calls, st.path, st.calls], ['single', 2, 'staged', 5]);
+  assert.ok(s.input < st.input && s.input > 2 * countTokens(single.single)); // the rules twice, the pages once each, no outline
+  assert.equal(estimate({ ...base, prompts: single, path: 'single', range: [1, 10] }).calls, 1);
+});
+
 test('estimate: figure images when the model reads them, the native PDF only at high fidelity', () => {
   const text = estimate({ ...base, sendImages: false }).input, img = estimate(base).input;
   assert.equal(img - text, 10 * 580); // the 10 figure pages, once each (Gemini's medium resolution); pages with text skip the planner

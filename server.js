@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { ROOT, BOOKS, generate, regenerateSpread, slugify, loadPrompts, roles } from './lib/generate.js';
 import { PROVIDERS, agentAvailable, hasBinary } from './lib/providers.js';
 import { estimate } from './lib/estimate.js';
-import { capsOf, PRESETS, AGENT_MODEL } from './lib/models.js';
+import { capsOf, PRESETS, AGENT_MODEL, defaultPreset } from './lib/models.js';
 import { exportBook } from './lib/export.js';
 import { validateBook } from './lib/validate.js';
 import { fixOutline, API_BLOCKS } from './lib/autofix.js';
@@ -44,8 +44,8 @@ async function api(req, res, url) {
     const presetsOf = (id, P) => Object.fromEntries(Object.keys(PRESETS).map(k => [k, P.agent ? { writer: AGENT_MODEL[P.agent]?.[k] || '' }
       : (({ planner, writer }) => ({ planner: name(planner, id), writer: name(writer, id) }))(roles({ provider: id, preset: k }))]));
     const providers = Object.entries(PROVIDERS).map(([id, P]) => ({ id, label: P.label, model: P.model || '', agent: !!P.agent, available: P.agent ? agentAvailable(P.agent) : P.cli ? hasBinary(P.cli) : true, cli: !!P.cli,
-      hasKey: P.env ? !!process.env[P.env] : true, needsKey: !!P.env && id !== 'compat', baseUrl: P.baseUrl || '', images: !!capsOf(id, P.model).images, pdf: !!capsOf(id, P.model).pdf, presets: presetsOf(id, P) }));
-    return send(res, 200, { providers, presets: Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label, images: p.images })), blocks: API_BLOCKS, defaultProvider: process.env.DEFAULT_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : agentAvailable('claude') ? 'agent-claude' : 'anthropic') });
+      hasKey: P.env ? !!process.env[P.env] : true, needsKey: !!P.env && id !== 'compat', baseUrl: P.baseUrl || '', images: !!capsOf(id, P.model).images, pdf: !!capsOf(id, P.model).pdf, presets: presetsOf(id, P), defaultPreset: defaultPreset(id) }));
+    return send(res, 200, { providers, presets: Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label, path: p.path, images: p.images })), blocks: API_BLOCKS, defaultProvider: process.env.DEFAULT_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : agentAvailable('claude') ? 'agent-claude' : 'anthropic') });
   }
   if (p === '/api/books' && req.method === 'GET') {
     await fsp.mkdir(BOOKS, { recursive: true });
@@ -62,7 +62,7 @@ async function api(req, res, url) {
     if (!P || P.agent || !Array.isArray(b.pages) || !Array.isArray(b.range)) return send(res, 200, null); // agents report their usage after the run
     const pages = b.pages.filter(p => p && Number.isInteger(p.n)).map(p => ({ n: p.n, text: String(p.text || ''), image: !!p.image }));
     const { preset, planner, writer } = roles({ provider: b.provider, preset: b.preset, model: b.model, plannerModel: b.plannerModel });
-    return send(res, 200, estimate({ prompts: await loadPrompts(), pages, range: b.range, planner, writer, hasPdf: !!b.hasPdf, fidelity: b.fidelity, sendImages: b.sendImages ?? preset.images }));
+    return send(res, 200, estimate({ prompts: await loadPrompts(), pages, range: b.range, planner, writer, path: preset.path, hasPdf: !!b.hasPdf, fidelity: b.fidelity, sendImages: b.sendImages ?? preset.images }));
   }
   if (p === '/api/generate' && req.method === 'POST') {
     const body = JSON.parse(await readBody(req));

@@ -24,7 +24,7 @@ export async function readPages(file, from, to) {
 }
 
 /** Runs the eval; returns the result rows. `providers` defaults to every API provider with a key in the environment. */
-export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir = path.join(ROOT, 'eval'), providers, preset = 'balanced', model, range = [1, 10], only, keep = false, log = console.log } = {}) {
+export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir = path.join(ROOT, 'eval'), providers, preset, model, range = [1, 10], only, keep = false, log = console.log } = {}) {
   process.env.POPBOOK_MOCK = '1'; // the mock provider is only ever used when asked for
   const { PROVIDERS } = await import('../lib/providers.js');
   const { generate, loadPrompts, slugify, BOOKS, roles } = await import('../lib/generate.js');
@@ -44,14 +44,14 @@ export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir
       const slug = `eval-${slugify(f)}-${id}-${Date.now().toString(36)}`, lines = [];
       // --model pins both roles to one model (as the phase 1 baseline ran); otherwise the preset picks them
       const job = { provider: id, preset, ...(model && { model, plannerModel: model }), fileName: f, totalPages: count, range: [range[0], to], pages, pdfBase64: buf.toString('base64'), slug, lang: 'auto', cache: false, extra: '', signal: AbortSignal.timeout(10 * 60 * 1000) };
-      const { preset: pre, planner, writer } = roles(job), mdl = writer.model; // images: the preset's choice (Budget: text only)
-      const est = estimate({ prompts, pages, range: job.range, planner, writer, hasPdf: true, sendImages: pre.images });
+      const { preset: pre, planner, writer } = roles(job), mdl = writer.model, single = pre.path === 'single'; // no preset: the provider's default
+      const est = estimate({ prompts, pages, range: job.range, planner, writer, path: pre.path, hasPdf: true, sendImages: pre.images });
       const figs = pre.images ? pages.filter(p => p.image).length : 0;
-      log(`▶ ${f} → ${id} ${preset}: ${planner.model} plans, ${mdl} writes (pages ${job.range.join('–')}, ${figs} as images)…`);
+      log(`▶ ${f} → ${id} ${pre.id} (${pre.path}): ${single ? `${mdl} writes the whole book` : `${planner.model} plans, ${mdl} writes`} (pages ${job.range.join('–')}, ${figs} as images)…`);
       const t0 = Date.now(); let book = null, err = null;
       try { book = await generate(job, m => lines.push(m)); } catch (e) { err = e; }
       const s = book?.source || err?.stats || {}, u = s.usage;
-      const row = { date: new Date().toISOString(), pdf: f, pages: job.range.join('-'), preset: `${id}:${preset}`, model: mdl, planner: planner.model, validFirstTry: book && s.repairs === 0 ? 1 : 0, repairs: s.repairs ?? '', calls: s.calls ?? '',
+      const row = { date: new Date().toISOString(), pdf: f, pages: job.range.join('-'), preset: `${id}:${pre.id}`, model: mdl, planner: single ? '' : planner.model, validFirstTry: book && s.repairs === 0 ? 1 : 0, repairs: s.repairs ?? '', calls: s.calls ?? '',
         spreads: book?.spreads.length ?? '', warnings: lines.filter(l => /warning:/.test(l)).length, inputTokens: u?.input ?? '', cachedInput: u?.cachedInput ?? '', outputTokens: u?.output ?? '', reasoning: u?.reasoning ?? '',
         cost: s.cost == null ? '' : +s.cost.toFixed(5), seconds: +((Date.now() - t0) / 1000).toFixed(1), estInput: est.input, estOutput: est.output, error: err ? err.message.split('\n')[0].slice(0, 200) : '' };
       rows.push(row);

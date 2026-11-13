@@ -17,7 +17,7 @@ const OUTLINE = JSON.stringify({ title: EX.title, lang: 'fr', spreads: [{ kind: 
 const slugs = [];
 const job = (provider, extra = {}) => { const slug = `test-gen-${process.pid}-${slugs.length}`; slugs.push(slug);
   return { provider, slug, fileName: 'x.pdf', totalPages: 2, range: [1, 2], pages: [{ n: 1, text: 'Amdahl' }, { n: 2, text: 'Gustafson' }], lang: 'auto', cache: false, ...extra }; };
-const fake = extra => job('compat', { baseUrl: base, model: 'm', ...extra });
+const fake = extra => job('compat', { baseUrl: base, model: 'm', preset: 'balanced', ...extra }); // compat starts on Budget: the staged tests ask for Balanced
 
 // A fake server that answers by task: reply(task) gets 'outline' or the spread numbers a writer call asks for. answers() gives
 // spread k its n-th answer (0-based, counting every call that asked for it). Each answer reports usage like the real API; every
@@ -25,8 +25,8 @@ const fake = extra => job('compat', { baseUrl: base, model: 'm', ...extra });
 let server, base, reply, sent = [];
 const sse = evs => evs.map(e => `data: ${JSON.stringify(e)}\n\n`).join('');
 const userText = body => { const c = body.messages.at(-1).content; return typeof c === 'string' ? c : c.filter(x => x.type === 'text').map(x => x.text).join('\n\n'); };
-const taskOf = body => { const t = userText(body); return /^Task: outline/m.test(t) ? 'outline' : [...t.matchAll(/^- spread (\d+)/gm)].map(m => +m[1]); };
-const of = task => sent.filter(s => task === 'outline' ? s.task === 'outline' : Array.isArray(s.task) && s.task.includes(task));
+const taskOf = body => { const t = userText(body); return /^Task: outline/m.test(t) ? 'outline' : /^Task: the whole book/m.test(t) ? 'book' : [...t.matchAll(/^- spread (\d+)/gm)].map(m => +m[1]); };
+const of = task => sent.filter(s => typeof task === 'string' ? s.task === task : Array.isArray(s.task) && s.task.includes(task));
 const answers = (spreads, outline = OUTLINE) => task => task === 'outline' ? outline : JSON.stringify({ spreads: task.map(k => spreads[k - 1](of(k).length)) });
 const each = f => task => task === 'outline' ? OUTLINE : JSON.stringify({ spreads: task.map(f) }); // one fixed answer per spread number
 before(async () => {
@@ -55,6 +55,29 @@ test('mock provider: an outline call, then one call per 3 neighbouring spreads; 
   assert.deepEqual(saved.source.usage, book.source.usage);
   const outline = JSON.parse(await fs.readFile(path.join(BOOKS, j.slug, 'outline.json'), 'utf8'));
   assert.deepEqual(outline.spreads.map(s => s.block), EX.spreads.map(s => s.scene.type));
+});
+
+test('Budget: one call writes the whole book from all the rules and every block spec; a repair resends only the spreads in error', async () => {
+  let n = 0; reply = () => JSON.stringify({ title: EX.title, lang: 'fr', spreads: [COVER, n++ ? BARS : { ...BARS, quiz: undefined }] }); sent = [];
+  const lines = [], j = fake({ preset: 'budget' }), book = await generate(j, m => lines.push(m)), prompts = await loadPrompts();
+  assert.deepEqual(book.spreads.map(s => s.scene.type), ['network', 'bars']);
+  assert.deepEqual([book.source.preset, book.source.calls, book.source.repairs, book.source.plannerModel], ['budget', 2, 1, undefined]);
+  assert.deepEqual(sent.map(s => s.task), ['book', 'book']);
+  assert.equal(sent[0].body.messages[0].content, prompts.single);
+  assert.ok(Object.values(prompts.blocks).every(spec => prompts.single.includes(spec)) && prompts.single.startsWith(prompts.core));
+  assert.equal(sent[0].body.response_format, undefined); // phase 2's path: no schema
+  const fix = userText(sent[1].body);
+  assert.ok(fix.includes('spreads[1].quiz') && fix.includes('"spreads[1]":') && !fix.includes('"spreads[0]":')); // only the spread in error
+  assert.ok(lines.some(l => /^Budget path: one call writes the whole book, model m$/.test(l)));
+  await assert.rejects(fs.access(path.join(BOOKS, j.slug, 'outline.json'))); // nothing to regenerate from
+
+  // more pages than one call takes: one call per 15, the later ones continue the book, without a cover
+  reply = () => JSON.stringify({ title: EX.title, lang: 'fr', spreads: [COVER, BARS] }); sent = [];
+  const pages = Array.from({ length: 16 }, (_, i) => ({ n: i + 1, text: 'page ' + (i + 1) }));
+  const big = await generate(fake({ preset: 'budget', pages, range: [1, 16], totalPages: 16 }), () => {});
+  assert.deepEqual(big.spreads.map(s => s.kind), ['cover', 'lesson', 'lesson']);
+  const t2 = userText(sent[1].body);
+  assert.ok(t2.includes('=== Page 16 ===') && !t2.includes('=== Page 15 ===') && t2.includes('continued') && t2.includes(`already has these spreads: "${COVER.title}"`));
 });
 
 const OUTLINE4 = JSON.stringify({ title: EX.title, lang: 'fr', spreads: [{ kind: 'cover', pages: [1], block: 'network', intent: 'the course' },
@@ -239,7 +262,9 @@ test('regenerate: one spread written again past the result cache, from the saved
 
 test('roles: the preset picks a tier per role, .env may route a role to another provider, the studio fields win', () => {
   const r = (job, env = {}) => { Object.assign(process.env, env); try { const x = roles(job); return [x.planner.provider + ':' + x.planner.model, x.writer.provider + ':' + x.writer.model, x.preset.id]; } finally { for (const k in env) delete process.env[k]; } };
-  assert.deepEqual(r({ provider: 'gemini' }), ['gemini:gemini-4-argon', 'gemini:gemini-3.8-flash', 'balanced']); // the default preset
+  assert.deepEqual(r({ provider: 'gemini' }), ['gemini:gemini-3.8-flash', 'gemini:gemini-3.8-flash', 'budget']); // Gemini and local models start on Budget…
+  assert.deepEqual([r({ provider: 'compat' })[2], r({ provider: 'anthropic' })[2], r({ provider: 'openai' })[2], r({ provider: 'claude-cli' })[2]], ['budget', 'balanced', 'balanced', 'balanced']); // …the others on Balanced
+  assert.deepEqual(r({ provider: 'gemini', preset: 'balanced' }), ['gemini:gemini-4-argon', 'gemini:gemini-3.8-flash', 'balanced']);
   assert.deepEqual(r({ provider: 'gemini', preset: 'budget' }), ['gemini:gemini-3.8-flash', 'gemini:gemini-3.8-flash', 'budget']);
   assert.deepEqual(r({ provider: 'anthropic', preset: 'best' }).slice(0, 2), ['anthropic:claude-opus-5-5', 'anthropic:claude-opus-5-5']);
   assert.deepEqual(r({ provider: 'openai', preset: 'balanced' }).slice(0, 2), ['openai:gpt-6-astra', 'openai:gpt-6-astra']); // no cheaper sibling known

@@ -77,22 +77,26 @@ prepares (see *Local agents* below).
 | **Codex CLI** | `codex` on your PATH | the CLI's default | same |
 | **Gemini CLI** | `gemini` on your PATH | `gemini-4-argon` (Balanced) | same |
 
-**Presets.** *Budget*, *Balanced* (default) and *Best* pick the models instead of you. The **planner** writes the outline
-(one call), the **writer** each spread (many calls, the bulk of the tokens):
+**Presets.** *Budget*, *Balanced* and *Best* pick the path and the models instead of you. Budget takes the cheapest path:
+one call writes the whole book (one per 15 pages), with all the rules and every block's spec; no outline, so no outline review
+and no *regenerate this spread*. Balanced and Best take the staged path: the **planner** writes the outline (one call), the
+**writer** the spreads (2–3 per call, the bulk of the tokens). A new build starts on Budget with Gemini and local models
+(OpenAI-compatible servers), on Balanced with the others; the job log and the estimate name the path.
 
-| Preset | Planner | Writer | Figure images |
-|---|---|---|---|
-| Budget | cheap model, low reasoning | cheap model, low reasoning | no |
-| Balanced | default model, medium reasoning | cheap model, low reasoning | yes |
-| Best | default model, medium reasoning | default model, medium reasoning | yes |
+| Preset | Path | Planner | Writer | Figure images |
+|---|---|---|---|---|
+| Budget | one call per 15 pages | — | cheap model, low reasoning | yes |
+| Balanced | outline, then writers | default model, medium reasoning | cheap model, low reasoning | yes |
+| Best | outline, then writers | default model, medium reasoning | default model, medium reasoning | yes |
 
 The cheap model is a known cheaper sibling (`gemini-3.8-flash`, `claude-haiku-5-5`, `haiku`), else the default model.
 `PLANNER_MODEL` / `WRITER_MODEL` in `.env` override a role and may send it to another provider: a known model id
 (`claude-opus-5-5` uses `ANTHROPIC_API_KEY`) or `provider:model` (`compat:llama3:8b`). The studio's *planner model* and
 *writer model* fields override both. Models, prices and what each model accepts live in [`lib/models.js`](lib/models.js).
 
-**Structured output.** Every API call sends the JSON schema of its answer, generated from the shape table in
-[`lib/validate.js`](lib/validate.js): the outline's, or the spread's for its scene block. Small local models gain the most:
+**Structured output.** Every staged call sends the JSON schema of its answer, generated from the shape table in
+[`lib/validate.js`](lib/validate.js): the outline's, or the writer's for the book's blocks (Budget sends none: a schema of
+every block would outweigh their specs). Small local models gain the most:
 Ollama turns the schema into its `format`, llama.cpp into a GBNF grammar, so the answer cannot leave the shape. A server
 that refuses the schema is asked again without it.
 

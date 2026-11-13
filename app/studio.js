@@ -93,8 +93,9 @@ fromEl.onchange = toEl.onchange = markRange;
 /* 2 · the AI                                                          */
 /* ------------------------------------------------------------------ */
 let providers = [], blocks = [], presets = [];
-const preset = () => presets.find(p => p.id === S.preset) || {};
-const S = store.get('studio', {}); S.models ||= {}; S.plannerModels ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {}; S.preset ||= 'balanced';
+// S.goal: the preset the user picked (none yet: each provider's default, Budget for Gemini and local models, else Balanced)
+const presetId = () => S.goal || prov()?.defaultPreset || 'balanced', preset = () => presets.find(p => p.id === presetId()) || {};
+const S = store.get('studio', {}); S.models ||= {}; S.plannerModels ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {};
 const provSel = $('#provider');
 const prov = () => providers.find(p => p.id === provSel.value);
 const saveSettings = () => store.set('studio', S);
@@ -109,27 +110,28 @@ async function loadConfig() {
 }
 function onProvider() {
   const P = prov(); if (!P) return; S.provider = P.id; saveSettings();
-  const isMock = P.id === 'mock', pm = P.presets?.[S.preset] || {};
+  const isMock = P.id === 'mock', pm = P.presets?.[presetId()] || {}, single = preset().path === 'single';
   $('#modelField').hidden = isMock; $('#baseField').hidden = P.id !== 'compat';
   $('#keyField').hidden = P.agent || P.cli || isMock;
-  $('#presetField').hidden = isMock; $('#preset').value = S.preset; $('#plannerField').hidden = P.agent || isMock;
+  $('#presetField').hidden = isMock; $('#preset').value = presetId(); $('#plannerField').hidden = P.agent || isMock || single;
   $('#modelLabel').textContent = P.agent ? 'Model' : 'Writer model';
   $('#model').value = S.models[P.id] || ''; $('#model').placeholder = pm.writer || P.model || (P.agent ? 'agent default' : 'default');
   $('#plannerModel').value = S.plannerModels[P.id] || ''; $('#plannerModel').placeholder = pm.planner || P.model || 'default';
   $('#presetHint').textContent = P.agent ? (pm.writer ? `Runs the agent with --model ${pm.writer}.` : 'This agent uses its own default model.')
-    : `${pm.planner} plans the book, ${pm.writer} writes each spread${preset().images ? '' : ', from the page text only'}.`;
+    : single ? `${pm.writer} writes the whole book in one call (one per 15 pages): the cheapest path, no outline to review.`
+    : `${pm.planner} plans the book, then ${pm.writer} writes it, two or three spreads per call.`;
   $('#baseUrl').value = S.baseUrls[P.id] || P.baseUrl || '';
   $('#apiKey').value = store.get('key:' + P.id, ''); $('#rememberKey').checked = !!store.get('key:' + P.id, '');
   $('#apiKey').placeholder = P.id === 'compat' ? 'optional (Ollama / LM Studio need none)' : 'paste a key, or put it in .env';
   $('#sendImages').checked = S.images[P.id] ?? (P.images && !!preset().images); $('#sendImages').closest('.field').hidden = P.agent || isMock;
   $('#fidelity').checked = !!S.hifi[P.id]; $('#fidelityField').hidden = !P.pdf;
-  $('#review').checked = !!S.review; $('#reviewField').hidden = P.agent; // agents write the whole book themselves
+  $('#review').checked = !!S.review; $('#reviewField').hidden = P.agent || single; // agents and Budget write the whole book at once
   const hint = $('#provHint'), keyState = $('#keyState');
   keyState.textContent = P.hasKey && P.needsKey ? '· key found in .env ✓' : '';
   hint.className = 'hint';
   if (P.agent) { hint.textContent = P.available ? `Found on your PATH ✓ Runs on this computer with your own login; no API key needed. It writes books/<name>/book.json and checks it.` : `Not installed (no "${P.id.replace('agent-', '')}" command on your PATH). Install it and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (isMock) hint.textContent = 'Returns the example book instantly. For testing the pipeline.';
-  else if (P.cli) { hint.textContent = P.available ? 'Found on your PATH ✓ The same staged pipeline, each call a "claude -p" with no tools, on your Claude login. Text only.' : `Not installed (no "${P.cli}" command on your PATH). Install Claude Code and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
+  else if (P.cli) { hint.textContent = P.available ? 'Found on your PATH ✓ The same pipeline, each call a "claude -p" with no tools, on your Claude login. Text only.' : `Not installed (no "${P.cli}" command on your PATH). Install Claude Code and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (P.id === 'compat') hint.textContent = 'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1 · OpenRouter: https://openrouter.ai/api/v1 · Groq: https://api.groq.com/openai/v1';
   else { hint.textContent = P.hasKey ? 'API key found in .env ✓' : 'Needs an API key: paste it below or add it to .env.'; hint.classList.add(P.hasKey ? 'ok' : 'warn'); }
   refreshGo();
@@ -137,7 +139,7 @@ function onProvider() {
 provSel.onchange = onProvider;
 $('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
 $('#plannerModel').oninput = e => { S.plannerModels[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
-$('#preset').onchange = e => { S.preset = e.target.value; S.images = {}; onProvider(); }; // the preset decides images again
+$('#preset').onchange = e => { S.goal = e.target.value; S.images = {}; onProvider(); }; // the preset decides images again
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
 $('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
 $('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
@@ -147,7 +149,7 @@ const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
 /** The AI settings of the form, as the server reads them (roles() in lib/generate.js). */
-const aiChoice = P => ({ provider: P.id, preset: S.preset, model: $('#model').value.trim() || undefined, plannerModel: P.agent ? undefined : $('#plannerModel').value.trim() || undefined });
+const aiChoice = P => ({ provider: P.id, preset: presetId(), model: $('#model').value.trim() || undefined, plannerModel: P.agent ? undefined : $('#plannerModel').value.trim() || undefined });
 /* what the model gets: clean text for every page, plus an image of each figure page — or, at high fidelity, the PDF itself */
 const highFidelity = P => !P.agent && !!P.pdf && $('#fidelity').checked;
 const wantsImages = P => P.id !== 'mock' && !highFidelity(P) && (P.agent || $('#sendImages').checked); // an agent gets its figures as input/fig-<n>.jpg
@@ -172,7 +174,7 @@ function scheduleEstimate() {
       const body = { ...aiChoice(P), range: [a, z], pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
       const e = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
       if (seq !== estSeq || !e) return; // the settings changed meanwhile, or this is an agent
-      estText = ` · estimate: ${e.calls} call${e.calls > 1 ? 's' : ''}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
+      estText = ` · estimate (${e.path === 'single' ? 'one call writes the book' : 'outline, then writers'}): ${e.calls} call${e.calls > 1 ? 's' : ''}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
       refreshGo(true);
     } catch {} // an estimate is a courtesy: never block the build on it
   }, 400);

@@ -65,7 +65,7 @@ Staged pipeline (v0.2 phase 3). API builds no longer write the whole book in one
 - The estimate counts one outline call plus ~0.6 spreads per page.
 
 Routing and weak models (v0.2 phase 4):
-- **Presets** *Budget* / *Balanced* (default) / *Best* in the studio and the eval (`--preset`). A preset picks a model tier
+- **Presets** *Budget* / *Balanced* / *Best* in the studio and the eval (`--preset`). A preset picks a model tier
   and a reasoning level for the planner (the outline call) and the writer (each spread), and whether figure pages go as
   images. Balanced plans with the provider's default model and writes with its cheaper sibling (gemini-3.8-flash,
   claude-haiku-5-5). `PLANNER_MODEL` / `WRITER_MODEL` in `.env` override a role, on another provider too
@@ -88,6 +88,10 @@ Routing and weak models (v0.2 phase 4):
   gave each writer its own prefix. Now every writer call of a book gets one schema (`writerSchema`: the book's blocks, cover
   or lesson), then the writer's rules and the outline; specs, pages and task follow. The first writer call runs alone, so
   the prefix is in the provider's cache before the others start.
+- **Budget is phase 2's path again; the staged pipeline is Balanced and Best.** Budget writes the whole book in one call (one
+  per 15 pages), from all the rules and every block spec, with autofix and phase 2's narrow repairs; no outline, review or
+  regenerate. A new build starts on Budget with Gemini and OpenAI-compatible servers, on Balanced with Claude, OpenAI and
+  `claude -p`. The job log and the studio's estimate name the path. Figure images are on for Budget too, as in phase 2.
 - **Agent bundle.** A local agent gets `books/<slug>/input/` (`pages.md`, `fig-<n>.jpg`, and `outline.json` when a plain
   model of its family can plan: `claude -p`, or the Gemini / OpenAI API with a key) and a short `PROMPT.md` that names
   the files to read and forbids opening the PDF or exploring the repo. Claude Code and Gemini CLI get `--model` per preset.
