@@ -29,6 +29,9 @@ before(async () => {
       if (path === '/busy/chat/completions') { res.writeHead(429, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"slow down","details":[{"retryDelay":"0.1s"}]}}'); }
       if (path === '/flaky/chat/completions') path = '/chat/completions';
       res.writeHead(200, { 'content-type': 'text/event-stream' });
+      if (path === '/silent/chat/completions') return res.write(': hello\n'); // then nothing, ever
+      if (path === '/slow/chat/completions') { const s = STREAMS['/chat/completions'], n = 5; // 5 chunks 100 ms apart: 400 ms in all
+        for (let i = 0; i < n; i++) setTimeout(() => i < n - 1 ? res.write(s.slice(i * 9, i * 9 + 9)) : res.end(s.slice(i * 9)), i * 100); return; }
       // split the stream at an awkward place to test buffering across chunks
       const s = STREAMS[path] || ''; res.write(s.slice(0, 17)); setTimeout(() => res.end(s.slice(17)), 5);
     });
@@ -36,7 +39,7 @@ before(async () => {
   await new Promise(r => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => server.close());
+after(() => { server.closeAllConnections(); server.close(); });
 
 const parts = [{ type: 'text', text: 'hi' }, { type: 'pdf', base64: 'UERG' }, { type: 'image', dataUrl: 'data:image/png;base64,iVBO' }];
 
@@ -113,8 +116,8 @@ test('claude-cli: claude -p without tools, our system prompt from a file, the sc
     const { text, usage } = await callModel('claude-cli', { system: 'rules', parts, model: 'haiku', schema: { type: 'object' } });
     const a = JSON.parse(text), arg = f => a.args[a.args.indexOf(f) + 1];
     assert.deepEqual([a.input, a.system], ['hi', 'rules']); // text only: the pdf and image parts stay behind
-    assert.deepEqual([arg('--output-format'), arg('--tools'), arg('--model'), JSON.parse(arg('--json-schema'))], ['json', '', 'haiku', { type: 'object' }]);
-    for (const f of ['-p', '--safe-mode', '--no-session-persistence']) assert.ok(a.args.includes(f), f);
+    assert.deepEqual([arg('--output-format'), arg('--tools'), arg('--model'), JSON.parse(arg('--json-schema'))], ['stream-json', '', 'haiku', { type: 'object' }]);
+    for (const f of ['-p', '--safe-mode', '--no-session-persistence', '--include-partial-messages']) assert.ok(a.args.includes(f), f);
     assert.deepEqual(usage, { input: 15, cachedInput: 5, output: 7, reasoning: 0 });
     await assert.rejects(callModel('claude-cli', { system: 's', parts: [{ type: 'text', text: 'fail' }] }), /-p failed.*overloaded/);
   } finally { delete process.env.CLAUDE_CLI_CMD; }
@@ -137,6 +140,17 @@ test('a transient failure is tried again: Retry-After respected, 3 retries at mo
   assert.equal(n.length, 3); // a refused connection: 3 retries
   const ac = new AbortController(); RETRY.delays = [5000]; setTimeout(() => ac.abort(), 50);
   try { await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/busy', model: 'x', signal: ac.signal }), /abort/i); } finally { RETRY.delays = [1, 1, 1]; } // cancel stops the wait
+});
+
+test('a request that goes silent for REQUEST_TIMEOUT_MS is a transient failure: tried again, then reported as a timeout', async () => {
+  process.env.REQUEST_TIMEOUT_MS = '250'; process.env.CLAUDE_CLI_CMD = 'node ' + fileURLToPath(new URL('./fake-claude.mjs', import.meta.url));
+  try {
+    requests = []; const notes = [];
+    await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/silent', model: 'x', onNote: n => notes.push(n) }), /^Error: timed out: nothing received for 0.25 s/);
+    assert.equal(requests.length, 4); assert.match(notes[0], /^timed out.*trying again/); // headers and a first chunk, then silence: 3 retries
+    assert.equal((await callModel('compat', { system: 's', parts, baseUrl: base + '/slow', model: 'x' })).text, '{"title":"B"}'); // longer than the timeout, never silent that long
+    await assert.rejects(callModel('claude-cli', { system: 's', parts: [{ type: 'text', text: 'hang' }] }), /^Error: timed out/); // claude -p too
+  } finally { delete process.env.REQUEST_TIMEOUT_MS; delete process.env.CLAUDE_CLI_CMD; }
 });
 
 test('HTTP errors surface the provider message', async () => {

@@ -93,6 +93,8 @@ Routing and weak models (v0.2 phase 4):
   the files to read and forbids opening the PDF or exploring the repo. Claude Code and Gemini CLI get `--model` per preset.
 
 ### Fixed
+- A model call that hangs no longer stalls a build for 5 minutes: after 90 s without a byte back (`REQUEST_TIMEOUT_MS` in `.env`)
+  it is cut and tried again like a dropped connection. A long answer that keeps streaming is not cut; `claude -p` now streams too.
 - One transient error no longer kills a build: a 429, a 5xx or a dropped connection is tried again up to 3 times, after 2 s,
   8 s and 20 s, or longer when the server's `Retry-After` (Gemini: `retryDelay`) asks for it, up to 60 s. The log says so.
 - A race time of 0 or less cost a repair call: the schema now asks for `a`, `b` (and a bars `value`) greater than 0
