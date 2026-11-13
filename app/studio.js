@@ -135,8 +135,15 @@ function onProvider() {
   else if (isMock) hint.textContent = 'Returns the example book instantly. For testing the pipeline.';
   else if (P.cli) { hint.textContent = P.available ? 'Found on your PATH ✓ The same pipeline, each call a "claude -p" with no tools, on your Claude login. Text only.' : `Not installed (no "${P.cli}" command on your PATH). Install Claude Code and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (P.id === 'compat') hint.textContent = 'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1 · OpenRouter: https://openrouter.ai/api/v1 · Groq: https://api.groq.com/openai/v1';
-  else { hint.textContent = P.hasKey ? 'API key found in .env ✓' : 'Needs an API key: paste it below or add it to .env.'; hint.classList.add(P.hasKey ? 'ok' : 'warn'); }
+  else keyHint();
   refreshGo();
+}
+function keyHint() {
+  const P = prov(), hint = $('#provHint'); if (!P || P.agent || P.id === 'mock' || P.id === 'compat') return;
+  const pasted = !!$('#apiKey').value.trim();
+  hint.className = 'hint';
+  hint.textContent = P.hasKey ? 'API key found in .env ✓' : pasted ? 'API key added ✓' : 'Needs an API key: paste it below or add it to .env.';
+  hint.classList.add(P.hasKey || pasted ? 'ok' : 'warn');
 }
 provSel.onchange = onProvider;
 $('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
@@ -147,7 +154,7 @@ $('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; s
 $('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
 $('#review').onchange = e => { S.review = e.target.checked; saveSettings(); };
 for (const id of ['lang', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); });
-const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); refreshGo(); };
+const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); keyHint(); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
 /** The AI settings of the form, as the server reads them (roles() in lib/generate.js). */

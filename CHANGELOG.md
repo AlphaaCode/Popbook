@@ -18,9 +18,6 @@ All notable changes to PopBook Studio are listed here. The format follows
 - The mock provider now goes through the real parse / validate / repair loop, so the pipeline is testable offline.
 - **High fidelity** option in the studio (`fidelity: 'high'`): sends the PDF pages themselves, for scans and heavy maths.
 - `SPREAD_MAX_TOKENS` in `.env`: the output cap per spread (default 1 500).
-- Beginner's guide (PDF) for non-technical users: `docs/PopBook-Beginners-Guide.pdf`.
-- Contributing guide, security policy, issue forms, pull request template, Dependabot and code owners.
-- CI now also runs on Windows and Node 24.
 - **Outline review** in the studio: *let me review the outline* pauses the build to edit, reorder or delete spreads
   (`POST /api/jobs/:id/outline`).
 - **Regenerate this spread**: *Your books* lists the spreads of API-built books, marks with ⚠ those PopBook wrote, and
@@ -113,9 +110,19 @@ Routing and weak models (v0.2 phase 4):
 - A race time of 0 or less cost a repair call: the schema now asks for `a`, `b` (and a bars `value`) greater than 0
   (`exclusiveMinimum`), and autofix turns one that slips through into a positive number, keeping the model's number as its label.
 - Photos of pages never reached Claude or Gemini (the image switch was hidden and off for providers that read PDFs).
-- The studio's estimate now refreshes when the model, pages per call or image options change.
+- The studio's estimate now refreshes when the model or image options change.
 - A scene list of strings or a missing list (`"items": ["a", "b"]`) crashed validation instead of being reported as an
   error.
+
+## [0.1.1] — 2026-11-04
+
+### Added
+- Beginner's guide (PDF) for non-technical users: `docs/PopBook-Beginners-Guide.pdf`.
+- Contributing guide, security policy, issue forms, pull request template, Dependabot and code owners.
+- CI now also runs on Windows and Node 24.
+
+### Fixed
+- Studio: the "Needs an API key" hint now turns green when you paste a key, instead of staying red until a key is in `.env` ([#11](https://github.com/AlphaaCode/Popbook/issues/11)).
 
 ## [0.1.0] — 2026-11-02
 
@@ -136,5 +143,6 @@ First public release.
 - **Single-file HTML export**, CLI tools (`check`, `pages`, `export`) and unit tests.
 - Example books: `calcul-parallele` and `blocks-demo`.
 
-[Unreleased]: https://github.com/AlphaaCode/Popbook/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AlphaaCode/Popbook/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/AlphaaCode/Popbook/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/AlphaaCode/Popbook/releases/tag/v0.1.0
