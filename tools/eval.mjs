@@ -29,6 +29,7 @@ export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir
   const { PROVIDERS } = await import('../lib/providers.js');
   const { generate, loadPrompts, slugify, BOOKS, roles } = await import('../lib/generate.js');
   const { estimate } = await import('../lib/estimate.js');
+  const { inputsFor } = await import('../lib/models.js');
 
   const ids = providers?.length ? providers : Object.entries(PROVIDERS).filter(([id, P]) => P.env && id !== 'compat' && process.env[P.env]).map(([id]) => id);
   if (!ids.length) throw new Error('No provider to test: put an API key in .env or pass --providers mock');
@@ -46,8 +47,8 @@ export async function runEval({ pdfDir = path.join(ROOT, 'eval', 'pdfs'), outDir
       const job = { provider: id, preset, ...(model && { model, plannerModel: model }), fileName: f, totalPages: count, range: [range[0], to], pages, pdfBase64: buf.toString('base64'), slug, lang: 'auto', cache: false, extra: '', signal: AbortSignal.timeout(10 * 60 * 1000) };
       const { preset: pre, planner, writer } = roles(job), mdl = writer.model, single = pre.path === 'single'; // no preset: the provider's default
       const est = estimate({ prompts, pages, range: job.range, planner, writer, path: pre.path, hasPdf: true, sendImages: pre.images });
-      const figs = pre.images ? pages.filter(p => p.image).length : 0;
-      log(`▶ ${f} → ${id} ${pre.id} (${pre.path}): ${single ? `${mdl} writes the whole book` : `${planner.model} plans, ${mdl} writes`} (pages ${job.range.join('–')}, ${figs} as images)…`);
+      const figs = inputsFor(writer, { hasPdf: true, sendImages: pre.images }).images ? pages.filter(p => p.image).length : 0; // what the writer reads, like generate()
+      log(`▶ ${f} → ${id} ${pre.id} (${pre.path}): ${single ? `${mdl} writes the whole book` : `${planner.model} plans, ${mdl} writes`} (pages ${job.range.join('–')}, ${figs ? `${figs} figure pages as images` : 'text only'})…`);
       const t0 = Date.now(); let book = null, err = null;
       try { book = await generate(job, m => lines.push(m)); } catch (e) { err = e; }
       const s = book?.source || err?.stats || {}, u = s.usage;
