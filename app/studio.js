@@ -93,9 +93,11 @@ fromEl.onchange = toEl.onchange = markRange;
 /* 2 · the AI                                                          */
 /* ------------------------------------------------------------------ */
 let providers = [], blocks = [], presets = [];
-// S.goal: the preset the user picked (none yet: each provider's default, Budget for Gemini and local models, else Balanced)
-const presetId = () => S.goal || prov()?.defaultPreset || 'balanced', preset = () => presets.find(p => p.id === presetId()) || {};
-const S = store.get('studio', {}); S.models ||= {}; S.plannerModels ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {};
+// S.goals: the preset the user picked, per provider (none yet: the provider's default, Budget for Gemini and local models, else
+// Balanced). Per provider, so a Balanced picked for Claude does not spend Gemini's free requests.
+const presetId = () => S.goals[prov()?.id] || prov()?.defaultPreset || 'balanced', preset = () => presets.find(p => p.id === presetId()) || {};
+const S = store.get('studio', {}); S.models ||= {}; S.plannerModels ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {}; S.goals ||= {};
+const FREE_TIER = { gemini: 'free tier allows 20 a day' }; // requests per day per model
 const provSel = $('#provider');
 const prov = () => providers.find(p => p.id === provSel.value);
 const saveSettings = () => store.set('studio', S);
@@ -119,7 +121,7 @@ function onProvider() {
   $('#plannerModel').value = S.plannerModels[P.id] || ''; $('#plannerModel').placeholder = pm.planner || P.model || 'default';
   $('#presetHint').textContent = P.agent ? (pm.writer ? `Runs the agent with --model ${pm.writer}.` : 'This agent uses its own default model.')
     : single ? `${pm.writer} writes the whole book in one call (one per 15 pages): the cheapest path, no outline to review.`
-    : `${pm.planner} plans the book, then ${pm.writer} writes it, two or three spreads per call.`;
+    : `${pm.planner} plans the book, then ${pm.writer} writes it, two or three spreads per call.${FREE_TIER[P.id] ? ` That takes several requests (the estimate below counts them); Gemini's ${FREE_TIER[P.id]}.` : ''}`;
   $('#baseUrl').value = S.baseUrls[P.id] || P.baseUrl || '';
   $('#apiKey').value = store.get('key:' + P.id, ''); $('#rememberKey').checked = !!store.get('key:' + P.id, '');
   $('#apiKey').placeholder = P.id === 'compat' ? 'optional (Ollama / LM Studio need none)' : 'paste a key, or put it in .env';
@@ -139,7 +141,7 @@ function onProvider() {
 provSel.onchange = onProvider;
 $('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
 $('#plannerModel').oninput = e => { S.plannerModels[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
-$('#preset').onchange = e => { S.goal = e.target.value; S.images = {}; onProvider(); }; // the preset decides images again
+$('#preset').onchange = e => { S.goals[provSel.value] = e.target.value; S.images = {}; onProvider(); }; // the preset decides images again
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
 $('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
 $('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
@@ -174,7 +176,9 @@ function scheduleEstimate() {
       const body = { ...aiChoice(P), range: [a, z], pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
       const e = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
       if (seq !== estSeq || !e) return; // the settings changed meanwhile, or this is an agent
-      estText = ` · estimate (${e.path === 'single' ? 'one call writes the book' : 'outline, then writers'}): ${e.calls} call${e.calls > 1 ? 's' : ''}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
+      // a single-call build knows its requests (one per 15 pages); a staged one guesses its spreads until the outline exists
+      const reqs = `uses ${e.path === 'single' ? '' : '~'}${e.calls} request${e.calls > 1 ? 's' : ''}${FREE_TIER[P.id] ? ` (${FREE_TIER[P.id]})` : ''}`;
+      estText = ` · estimate (${e.path === 'single' ? 'one call writes the book' : 'outline, then writers'}): ${reqs}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
       refreshGo(true);
     } catch {} // an estimate is a courtesy: never block the build on it
   }, 400);
