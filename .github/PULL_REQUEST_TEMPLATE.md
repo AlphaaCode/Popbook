@@ -19,6 +19,6 @@
 - [ ] `npm test` passes
 - [ ] `npm run check` passes
 - [ ] I opened the affected books / studio in a browser (for visual changes)
-- [ ] I updated the README and/or `prompts/system.md` if behaviour or the book format changed
+- [ ] I updated the README and/or `prompts/` if behaviour or the book format changed
 - [ ] I added a line to `CHANGELOG.md` under *Unreleased*
 - [ ] No API keys, personal PDFs or generated books in this PR

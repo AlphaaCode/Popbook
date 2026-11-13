@@ -6,6 +6,8 @@ A fixed engine (`viewer/`) renders any `books/<slug>/book.json`. **Your job is t
 
 ## Make a book
 
+If the studio started you, `books/<slug>/PROMPT.md` names the files to read (`books/<slug>/input/`): follow it and skip step 1.
+
 1. **Get the pages.** Either extract text:
    ```
    node tools/pdf2pages.mjs <file.pdf> --pages 1-10 --out books/<slug>
@@ -13,8 +15,8 @@ A fixed engine (`viewer/`) renders any `books/<slug>/book.json`. **Your job is t
    (writes `books/<slug>/pages/page-NNN.txt` and copies the PDF to `books/<slug>/source.pdf`), or read the PDF
    directly with your file-reading tool. Look at the PDF itself for diagrams, tables and scanned pages; the text
    files lose layout. `<slug>` is short, lowercase, ASCII, dashes (e.g. `thermo-ch3`).
-2. **Read `prompts/system.md` completely.** It defines the format, length limits, the scene block catalogue and how
-   to choose a block. Follow it exactly. Write in the language of the source unless told otherwise.
+2. **Read `prompts/core.md` completely**, then `prompts/blocks/<name>.md` for each block you may use. They define the
+   format, length limits, the scene blocks and how to choose one. Follow them exactly. Write in the language of the source unless told otherwise.
 3. **Write `books/<slug>/book.json`.**
 4. **Check it:**
    ```

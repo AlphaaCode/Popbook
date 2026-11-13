@@ -5,10 +5,13 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ROOT, BOOKS, generate, slugify } from './lib/generate.js';
-import { PROVIDERS, agentAvailable } from './lib/providers.js';
+import { ROOT, BOOKS, generate, regenerateSpread, slugify, loadPrompts, roles } from './lib/generate.js';
+import { PROVIDERS, agentAvailable, hasBinary } from './lib/providers.js';
+import { estimate } from './lib/estimate.js';
+import { capsOf, PRESETS, AGENT_MODEL, defaultPreset } from './lib/models.js';
 import { exportBook } from './lib/export.js';
 import { validateBook } from './lib/validate.js';
+import { fixOutline, API_BLOCKS } from './lib/autofix.js';
 
 
 const PORT = Number(process.env.PORT || 5173), HOST = process.env.HOST || '127.0.0.1';
@@ -19,22 +22,47 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const jobs = new Map();
 
 const send = (res, code, body, type = 'application/json; charset=utf-8') => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body)); };
+const busy = slug => [...jobs.values()].some(j => j.slug === slug && (j.status === 'running' || j.status === 'review'));
+/** A job the studio follows through /api/jobs/:id: run(job, log) resolves to the book. */
+function startJob(fields, run) {
+  const id = randomUUID(), ac = new AbortController();
+  const job = { ...fields, id, status: 'running', log: [], started: Date.now(), signal: ac.signal, abort: () => ac.abort() };
+  const log = m => { job.log.push(`[${new Date().toLocaleTimeString()}] ${m}`); if (job.log.length > 2000) job.log.splice(0, 500); console.log('[job ' + id.slice(0, 6) + '] ' + m); };
+  jobs.set(id, job);
+  queueMicrotask(() => run(job, log).then(book => { job.status = 'done'; job.title = book.title; log(`Done: "${book.title}" — ${book.spreads.length} spreads. Open /viewer/?book=${job.slug}`); })
+    .catch(e => { job.status = 'error'; if (job.error !== 'Cancelled') job.error = e.message; log('ERROR: ' + job.error); })
+    .finally(() => { delete job.pdfBase64; delete job.pages; delete job.apiKey; }));
+  return { job, log, ac };
+}
 async function readBody(req, limit = 120 * 1024 * 1024) { const chunks = []; let n = 0; for await (const c of req) { n += c.length; if (n > limit) throw new Error('Upload too large'); chunks.push(c); } return Buffer.concat(chunks).toString('utf8'); }
 
 async function api(req, res, url) {
   const p = url.pathname;
   if (p === '/api/config' && req.method === 'GET') {
-    const providers = Object.entries(PROVIDERS).map(([id, P]) => ({ id, label: P.label, model: P.model || '', agent: !!P.agent, available: P.agent ? agentAvailable(P.agent) : true,
-      hasKey: P.env ? !!process.env[P.env] : true, needsKey: !!P.env && id !== 'compat', baseUrl: P.baseUrl || '', images: !!P.images, pdf: !!P.pdf }));
-    return send(res, 200, { providers, defaultProvider: process.env.DEFAULT_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : agentAvailable('claude') ? 'agent-claude' : 'anthropic') });
+    // presets: the models each preset picks for this provider (after .env PLANNER_MODEL / WRITER_MODEL), shown as the fields' placeholders
+    const name = (r, id) => r.provider === id ? r.model : `${r.provider}:${r.model}`;
+    const presetsOf = (id, P) => Object.fromEntries(Object.keys(PRESETS).map(k => [k, P.agent ? { writer: AGENT_MODEL[P.agent]?.[k] || '' }
+      : (({ planner, writer }) => ({ planner: name(planner, id), writer: name(writer, id) }))(roles({ provider: id, preset: k }))]));
+    const providers = Object.entries(PROVIDERS).map(([id, P]) => ({ id, label: P.label, model: P.model || '', agent: !!P.agent, available: P.agent ? agentAvailable(P.agent) : P.cli ? hasBinary(P.cli) : true, cli: !!P.cli,
+      hasKey: P.env ? !!process.env[P.env] : true, needsKey: !!P.env && id !== 'compat', baseUrl: P.baseUrl || '', images: !!capsOf(id, P.model).images, pdf: !!capsOf(id, P.model).pdf, presets: presetsOf(id, P), defaultPreset: defaultPreset(id) }));
+    return send(res, 200, { providers, presets: Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label, path: p.path, images: p.images })), blocks: API_BLOCKS, defaultProvider: process.env.DEFAULT_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : agentAvailable('claude') ? 'agent-claude' : 'anthropic') });
   }
   if (p === '/api/books' && req.method === 'GET') {
     await fsp.mkdir(BOOKS, { recursive: true });
     const out = [];
     for (const d of await fsp.readdir(BOOKS, { withFileTypes: true })) { if (!d.isDirectory()) continue;
       try { const b = JSON.parse(await fsp.readFile(path.join(BOOKS, d.name, 'book.json'), 'utf8')); const st = await fsp.stat(path.join(BOOKS, d.name, 'book.json'));
-        out.push({ slug: d.name, title: b.title, spreads: b.spreads?.length || 0, lang: b.lang, source: b.source || null, updated: st.mtimeMs }); } catch {} }
+        const regen = fs.existsSync(path.join(BOOKS, d.name, 'outline.json')); // written one spread per call: each can be written again
+        out.push({ slug: d.name, title: b.title, spreads: b.spreads?.length || 0, lang: b.lang, source: b.source || null, updated: st.mtimeMs,
+          list: regen ? b.spreads.map(s => ({ title: s.title, fallback: s.fallback })) : undefined }); } catch {} }
     return send(res, 200, out.sort((a, b) => b.updated - a.updated));
+  }
+  if (p === '/api/estimate' && req.method === 'POST') { // tokens and cost of a build, before spending any (text only: images are counted, not sent)
+    const b = JSON.parse(await readBody(req)); const P = PROVIDERS[b.provider];
+    if (!P || P.agent || !Array.isArray(b.pages) || !Array.isArray(b.range)) return send(res, 200, null); // agents report their usage after the run
+    const pages = b.pages.filter(p => p && Number.isInteger(p.n)).map(p => ({ n: p.n, text: String(p.text || ''), image: !!p.image }));
+    const { preset, planner, writer } = roles({ provider: b.provider, preset: b.preset, model: b.model, plannerModel: b.plannerModel });
+    return send(res, 200, estimate({ prompts: await loadPrompts(), pages, range: b.range, planner, writer, path: preset.path, hasPdf: !!b.hasPdf, fidelity: b.fidelity, sendImages: b.sendImages ?? preset.images }));
   }
   if (p === '/api/generate' && req.method === 'POST') {
     const body = JSON.parse(await readBody(req));
@@ -47,20 +75,34 @@ async function api(req, res, url) {
     if (!Array.isArray(body.range) || !body.range.every(Number.isInteger)) body.range = [Math.min(...ns), Math.max(...ns)];
     // never overwrite an existing book: thermo, thermo-2, thermo-3…
     const base = slugify(body.slug || body.fileName); let slug = base;
-    for (let n = 2; fs.existsSync(path.join(BOOKS, slug, 'book.json')) || [...jobs.values()].some(j => j.slug === slug && j.status === 'running'); n++) slug = `${base}-${n}`;
-    const id = randomUUID(); const ac = new AbortController();
-    const job = { ...body, id, status: 'running', log: [], slug, started: Date.now(), signal: ac.signal, abort: () => ac.abort() };
-    const log = m => { job.log.push(`[${new Date().toLocaleTimeString()}] ${m}`); if (job.log.length > 2000) job.log.splice(0, 500); console.log('[job ' + id.slice(0, 6) + '] ' + m); };
-    jobs.set(id, job);
-    generate(job, log).then(book => { job.status = 'done'; job.title = book.title; log(`Done: "${book.title}" — ${book.spreads.length} spreads. Open /viewer/?book=${slug}`); })
-      .catch(e => { job.status = 'error'; if (job.error !== 'Cancelled') job.error = e.message; log('ERROR: ' + job.error); })
-      .finally(() => { delete job.pdfBase64; delete job.pages; delete job.apiKey; });
-    return send(res, 200, { id, slug });
+    for (let n = 2; fs.existsSync(path.join(BOOKS, slug, 'book.json')) || busy(slug); n++) slug = `${base}-${n}`;
+    const { job, log, ac } = startJob({ ...body, review: undefined, slug }, generate);
+    // outline review: the build waits here while the author edits the plan in the studio (POST …/outline); an hour without an answer cancels it
+    if (body.review === true && !PROVIDERS[body.provider].agent) job.review = outline => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { job.error = 'The outline was not reviewed within an hour'; ac.abort(); }, 60 * 60 * 1000);
+      ac.signal.addEventListener('abort', () => { clearTimeout(timer); reject(new Error(job.error || 'Cancelled')); }, { once: true });
+      Object.assign(job, { status: 'review', outline, resume: o => { clearTimeout(timer); Object.assign(job, { status: 'running', outline: undefined, resume: undefined }); resolve(o); } });
+      log('Outline ready: review it below (edit, reorder or delete spreads), then write the book.');
+    });
+    return send(res, 200, { id: job.id, slug });
   }
   let m;
+  if ((m = /^\/api\/books\/([\w-]+)\/spreads\/(\d+)\/regenerate$/.exec(p)) && req.method === 'POST') { // one spread again, the rest of the book untouched
+    const b = JSON.parse(await readBody(req) || '{}'), slug = m[1];
+    if (busy(slug)) return send(res, 409, { error: 'This book is being written: wait for that build to finish' });
+    const P = PROVIDERS[b.provider], api = P && !P.agent; // an agent picked in the studio: the book's own provider instead
+    const { job } = startJob({ slug, index: Number(m[2]), ...(api && { provider: b.provider, preset: b.preset, model: b.model, plannerModel: b.plannerModel, apiKey: b.apiKey, baseUrl: b.baseUrl }),
+      fidelity: b.fidelity, sendImages: b.sendImages }, regenerateSpread);
+    return send(res, 200, { id: job.id, slug });
+  }
   if ((m = /^\/api\/jobs\/([\w-]+)$/.exec(p)) && req.method === 'GET') { const j = jobs.get(m[1]); if (!j) return send(res, 404, { error: 'No such job' }); const since = Number(url.searchParams.get('since') || 0);
-    return send(res, 200, { status: j.status, slug: j.slug, error: j.error, title: j.title, log: j.log.slice(since), next: j.log.length }); }
-  if ((m = /^\/api\/jobs\/([\w-]+)\/cancel$/.exec(p)) && req.method === 'POST') { const j = jobs.get(m[1]); if (j && j.status === 'running') { j.abort(); j.status = 'error'; j.error = 'Cancelled'; } return send(res, 200, { ok: true }); }
+    return send(res, 200, { status: j.status, slug: j.slug, error: j.error, title: j.title, outline: j.status === 'review' ? j.outline : undefined, log: j.log.slice(since), next: j.log.length }); }
+  if ((m = /^\/api\/jobs\/([\w-]+)\/outline$/.exec(p)) && req.method === 'POST') { const j = jobs.get(m[1]);
+    if (!j || j.status !== 'review') return send(res, 409, { error: 'This build is not waiting for its outline' });
+    const { outline, errors } = fixOutline(JSON.parse(await readBody(req)).outline, j.pages.map(pg => pg.n)); // the same cleaning as the model's outline
+    if (errors.length) return send(res, 400, { error: errors.join(' · ') });
+    j.resume(outline); return send(res, 200, { ok: true }); }
+  if ((m = /^\/api\/jobs\/([\w-]+)\/cancel$/.exec(p)) && req.method === 'POST') { const j = jobs.get(m[1]); if (j && (j.status === 'running' || j.status === 'review')) { j.abort(); j.status = 'error'; j.error = 'Cancelled'; } return send(res, 200, { ok: true }); }
   if ((m = /^\/api\/books\/([\w-]+)\/export$/.exec(p)) && req.method === 'GET') {
     const html = await exportBook(m[1]); res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-disposition': `attachment; filename="${m[1]}.html"` }); return res.end(html); }
   if ((m = /^\/api\/books\/([\w-]+)\/check$/.exec(p)) && req.method === 'GET') { const v = validateBook(await fsp.readFile(path.join(BOOKS, m[1], 'book.json'), 'utf8')); return send(res, 200, { ok: v.ok, errors: v.errors, warnings: v.warnings }); }

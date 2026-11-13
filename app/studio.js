@@ -1,6 +1,7 @@
 // PopBook Studio front-end: pick a lesson, connect an AI, follow the build, browse the library.
 import * as pdfjs from '/vendor/pdfjs/pdf.mjs';
 pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.mjs';
+import { scanPage, cleanPages, renderPage } from '/lib/pages.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -91,35 +92,48 @@ fromEl.onchange = toEl.onchange = markRange;
 /* ------------------------------------------------------------------ */
 /* 2 · the AI                                                          */
 /* ------------------------------------------------------------------ */
-let providers = [];
-const S = store.get('studio', {}); S.models ||= {}; S.baseUrls ||= {}; S.images ||= {};
+let providers = [], blocks = [], presets = [];
+// S.goals: the preset the user picked, per provider (none yet: the provider's default, Budget for Gemini and local models, else
+// Balanced). Per provider, so a Balanced picked for Claude does not spend Gemini's free requests.
+const presetId = () => S.goals[prov()?.id] || prov()?.defaultPreset || 'balanced', preset = () => presets.find(p => p.id === presetId()) || {};
+const S = store.get('studio', {}); S.models ||= {}; S.plannerModels ||= {}; S.baseUrls ||= {}; S.images ||= {}; S.hifi ||= {}; S.goals ||= {};
+const FREE_TIER = { gemini: 'free tier allows 20 a day' }; // requests per day per model
 const provSel = $('#provider');
 const prov = () => providers.find(p => p.id === provSel.value);
 const saveSettings = () => store.set('studio', S);
 
 async function loadConfig() {
   const cfg = await fetch('/api/config').then(r => r.json());
-  providers = cfg.providers;
-  provSel.innerHTML = providers.map(p => `<option value="${p.id}">${esc(p.label)}${p.agent && !p.available ? ' — not installed' : ''}</option>`).join('');
+  providers = cfg.providers; blocks = cfg.blocks || []; presets = cfg.presets || [];
+  provSel.innerHTML = providers.map(p => `<option value="${p.id}">${esc(p.label)}${!p.available ? ' — not installed' : ''}</option>`).join('');
   provSel.value = providers.some(p => p.id === S.provider) ? S.provider : cfg.defaultProvider;
-  for (const id of ['lang', 'per', 'extra']) if (S[id] !== undefined) $('#' + id).value = S[id];
+  for (const id of ['lang', 'extra']) if (S[id] !== undefined) $('#' + id).value = S[id];
   onProvider();
 }
 function onProvider() {
   const P = prov(); if (!P) return; S.provider = P.id; saveSettings();
-  const isMock = P.id === 'mock';
+  const isMock = P.id === 'mock', pm = P.presets?.[presetId()] || {}, single = preset().path === 'single';
   $('#modelField').hidden = isMock; $('#baseField').hidden = P.id !== 'compat';
-  $('#keyField').hidden = P.agent || isMock;
-  $('#model').value = S.models[P.id] || ''; $('#model').placeholder = P.model || (P.agent ? 'agent default' : 'default');
+  $('#keyField').hidden = P.agent || P.cli || isMock;
+  $('#presetField').hidden = isMock; $('#preset').value = presetId(); $('#plannerField').hidden = P.agent || isMock || single;
+  $('#modelLabel').textContent = P.agent ? 'Model' : 'Writer model';
+  $('#model').value = S.models[P.id] || ''; $('#model').placeholder = pm.writer || P.model || (P.agent ? 'agent default' : 'default');
+  $('#plannerModel').value = S.plannerModels[P.id] || ''; $('#plannerModel').placeholder = pm.planner || P.model || 'default';
+  $('#presetHint').textContent = P.agent ? (pm.writer ? `Runs the agent with --model ${pm.writer}.` : 'This agent uses its own default model.')
+    : single ? `${pm.writer} writes the whole book in one call (one per 15 pages): the cheapest path, no outline to review.`
+    : `${pm.planner} plans the book, then ${pm.writer} writes it, two or three spreads per call.${FREE_TIER[P.id] ? ` That takes several requests (the estimate below counts them); Gemini's ${FREE_TIER[P.id]}.` : ''}`;
   $('#baseUrl').value = S.baseUrls[P.id] || P.baseUrl || '';
   $('#apiKey').value = store.get('key:' + P.id, ''); $('#rememberKey').checked = !!store.get('key:' + P.id, '');
   $('#apiKey').placeholder = P.id === 'compat' ? 'optional (Ollama / LM Studio need none)' : 'paste a key, or put it in .env';
-  $('#sendImages').checked = S.images[P.id] ?? P.images; $('#sendImages').closest('.field').hidden = P.agent || isMock || P.pdf;
+  $('#sendImages').checked = S.images[P.id] ?? (P.images && !!preset().images); $('#sendImages').closest('.field').hidden = P.agent || isMock;
+  $('#fidelity').checked = !!S.hifi[P.id]; $('#fidelityField').hidden = !P.pdf;
+  $('#review').checked = !!S.review; $('#reviewField').hidden = P.agent || single; // agents and Budget write the whole book at once
   const hint = $('#provHint'), keyState = $('#keyState');
   keyState.textContent = P.hasKey && P.needsKey ? '· key found in .env ✓' : '';
   hint.className = 'hint';
   if (P.agent) { hint.textContent = P.available ? `Found on your PATH ✓ Runs on this computer with your own login; no API key needed. It writes books/<name>/book.json and checks it.` : `Not installed (no "${P.id.replace('agent-', '')}" command on your PATH). Install it and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (isMock) hint.textContent = 'Returns the example book instantly. For testing the pipeline.';
+  else if (P.cli) { hint.textContent = P.available ? 'Found on your PATH ✓ The same pipeline, each call a "claude -p" with no tools, on your Claude login. Text only.' : `Not installed (no "${P.cli}" command on your PATH). Install Claude Code and log in once, or pick another option.`; hint.classList.add(P.available ? 'ok' : 'warn'); }
   else if (P.id === 'compat') hint.textContent = 'Ollama: http://localhost:11434/v1 · LM Studio: http://localhost:1234/v1 · OpenRouter: https://openrouter.ai/api/v1 · Groq: https://api.groq.com/openai/v1';
   else keyHint();
   refreshGo();
@@ -132,22 +146,61 @@ function keyHint() {
   hint.classList.add(P.hasKey || pasted ? 'ok' : 'warn');
 }
 provSel.onchange = onProvider;
-$('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); };
+$('#model').oninput = e => { S.models[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
+$('#plannerModel').oninput = e => { S.plannerModels[provSel.value] = e.target.value.trim(); saveSettings(); refreshGo(); };
+$('#preset').onchange = e => { S.goals[provSel.value] = e.target.value; S.images = {}; onProvider(); }; // the preset decides images again
 $('#baseUrl').oninput = e => { S.baseUrls[provSel.value] = e.target.value.trim(); saveSettings(); };
-$('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); };
-for (const id of ['lang', 'per', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); });
+$('#sendImages').onchange = e => { S.images[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
+$('#fidelity').onchange = e => { S.hifi[provSel.value] = e.target.checked; saveSettings(); refreshGo(); };
+$('#review').onchange = e => { S.review = e.target.checked; saveSettings(); };
+for (const id of ['lang', 'extra']) $('#' + id).addEventListener('input', e => { S[id] = e.target.value; saveSettings(); });
 const syncKey = () => { const k = 'key:' + provSel.value; if ($('#rememberKey').checked && $('#apiKey').value) store.set(k, $('#apiKey').value); else store.del(k); keyHint(); refreshGo(); };
 $('#apiKey').oninput = syncKey; $('#rememberKey').onchange = syncKey;
 
-function refreshGo() {
+/** The AI settings of the form, as the server reads them (roles() in lib/generate.js). */
+const aiChoice = P => ({ provider: P.id, preset: presetId(), model: $('#model').value.trim() || undefined, plannerModel: P.agent ? undefined : $('#plannerModel').value.trim() || undefined });
+/* what the model gets: clean text for every page, plus an image of each figure page — or, at high fidelity, the PDF itself */
+const highFidelity = P => !P.agent && !!P.pdf && $('#fidelity').checked;
+const wantsImages = P => P.id !== 'mock' && !highFidelity(P) && (P.agent || $('#sendImages').checked); // an agent gets its figures as input/fig-<n>.jpg
+/** Pages a..z as [{ n, text, figure, image? }]. A PDF page is scanned once (cached on `src`); the cleaning needs the whole range. */
+async function readRange(a, z) {
+  if (src.kind !== 'pdf') return src.pages.slice(a - 1, z).map((p, i) => ({ n: a + i, text: p.text, figure: !!p.image, image: p.image }));
+  const scans = (src.scans ||= new Map());
+  for (let n = a; n <= z; n++) if (!scans.has(n)) scans.set(n, await scanPage(await src.doc.getPage(n), pdfjs.OPS));
+  return cleanPages(Array.from({ length: z - a + 1 }, (_, i) => scans.get(a + i)));
+}
+
+/* pre-flight estimate of tokens and cost: the server counts them */
+let estText = '', estTimer = 0, estSeq = 0;
+const kTok = n => n >= 1000 ? Math.round(n / 1000) + 'k' : String(n);
+function scheduleEstimate() {
+  clearTimeout(estTimer); estText = ''; const P = prov();
+  if (!src || !P || P.agent || running) return;
+  const seq = ++estSeq;
+  estTimer = setTimeout(async () => {
+    try {
+      const [a, z] = clampRange(), pages = (await readRange(a, z)).map(p => ({ n: p.n, text: p.text, image: p.figure }));
+      const body = { ...aiChoice(P), range: [a, z], pages, hasPdf: src.kind === 'pdf', sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
+      const e = await fetch('/api/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+      if (seq !== estSeq || !e) return; // the settings changed meanwhile, or this is an agent
+      // a single-call build knows its requests (one per 15 pages); a staged one guesses its spreads until the outline exists
+      const reqs = `uses ${e.path === 'single' ? '' : '~'}${e.calls} request${e.calls > 1 ? 's' : ''}${FREE_TIER[P.id] ? ` (${FREE_TIER[P.id]})` : ''}`;
+      estText = ` · estimate (${e.path === 'single' ? 'one call writes the book' : 'outline, then writers'}): ${reqs}, ~${kTok(e.input)} in / ~${kTok(e.output)} out tokens${e.cost == null ? '' : `, ≈ $${e.cost.toFixed(2)}`}`;
+      refreshGo(true);
+    } catch {} // an estimate is a courtesy: never block the build on it
+  }, 400);
+}
+
+function refreshGo(keepEstimate) {
+  if (!keepEstimate) scheduleEstimate();
   const P = prov(), go = $('#go'), hint = $('#goHint'); let why = '';
   if (!src) why = 'Drop a lesson first.';
   else if (!P) why = 'Pick a model.';
-  else if (P.agent && !P.available) why = 'This agent is not installed.';
+  else if (!P.available) why = `Not installed (no "${P.agent || P.cli}" command on your PATH).`;
   else if (P.needsKey && !P.hasKey && !$('#apiKey').value.trim()) why = 'Add an API key (or put it in .env).';
   else if (P.id === 'compat' && !$('#baseUrl').value.trim()) why = 'Set the base URL of your server.';
   go.disabled = !!why || running; hint.className = 'hint center';
-  hint.textContent = running ? 'A book is being built…' : why || (() => { const [a, z] = clampRange(); return `Pages ${a}–${z} (${z - a + 1}) → ${P.label.split(' (')[0]}`; })();
+  hint.textContent = running ? 'A book is being built…' : why || (() => { const [a, z] = clampRange(); return `Pages ${a}–${z} (${z - a + 1}) → ${P.label.split(' (')[0]}${estText}`; })();
 }
 
 /* ------------------------------------------------------------------ */
@@ -158,42 +211,73 @@ const logEl = $('#log');
 function log(line) { const div = document.createElement('div'); div.textContent = line; if (/ERROR|invalid book/i.test(line)) div.className = 'err'; else if (/warning/i.test(line)) div.className = 'warn'; logEl.append(div); logEl.scrollTop = logEl.scrollHeight; }
 function setBar(p) { const bar = $('.bar'); bar.classList.toggle('indet', p === null); if (p !== null) $('#barFill').style.width = Math.round(p * 100) + '%'; }
 
-async function pageText(page) { const tc = await page.getTextContent(); return tc.items.map(i => (i.str || '') + (i.hasEOL ? '\n' : '')).join('').replace(/[ \t]+\n/g, '\n').trim(); }
-async function pageImage(page) { const vp = page.getViewport({ scale: 1 }); const v = page.getViewport({ scale: Math.min(2.5, 1200 / vp.width) }); const c = document.createElement('canvas'); c.width = v.width; c.height = v.height;
-  await page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise; return c.toDataURL('image/jpeg', 0.78); }
 function b64(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 
-$('#go').onclick = async () => {
-  const P = prov(); const [a, z] = clampRange();
+function startProgress(title) {
   running = true; refreshGo();
   const card = $('#progress'); card.hidden = false; card.classList.remove('failed'); $('#doneRow').hidden = true; $('#cancel').hidden = false;
-  logEl.innerHTML = ''; setBar(0.02); $('#jobTitle').textContent = '· ' + src.name; card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  logEl.innerHTML = ''; setBar(0.02); $('#jobTitle').textContent = '· ' + title; card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('#go').onclick = async () => {
+  const P = prov(); const [a, z] = clampRange();
+  startProgress(src.name);
   try {
-    const wantImages = !P.agent && P.id !== 'mock' && !P.pdf && $('#sendImages').checked;
-    const pages = [];
+    const wantImages = wantsImages(P), hifi = highFidelity(P), pages = [];
     if (src.kind === 'pdf') {
-      log(`Reading pages ${a}–${z}${wantImages ? ' and rendering page images' : ''}…`);
-      for (let n = a; n <= z; n++) { const page = await src.doc.getPage(n); pages.push({ n, text: await pageText(page), image: wantImages ? await pageImage(page) : undefined }); setBar(0.02 + 0.08 * (n - a + 1) / (z - a + 1)); }
-      const empty = pages.filter(p => !p.text).length; if (empty) log(`  ${empty} page(s) have no extractable text (scans?) — the model will rely on the PDF or images.`);
-    } else for (let n = a; n <= z; n++) { const p = src.pages[n - 1]; pages.push({ n, text: p.text, image: p.image }); }
-    const body = { provider: P.id, model: $('#model').value.trim() || undefined, baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
+      log(`Reading pages ${a}–${z}…`);
+      const read = await readRange(a, z), figs = read.filter(p => p.figure).map(p => p.n);
+      log(hifi ? '  high fidelity: the model gets the PDF pages themselves' : figs.length ? `  figures, tables or scans on page(s) ${figs.join(', ')}${wantImages ? ' — sent as images' : P.id === 'mock' ? '' : ' — images are off: the model gets their text only'}` : '  no figures found: text only');
+      for (const [i, p] of read.entries()) { pages.push({ n: p.n, text: p.text, image: wantImages && p.figure ? await renderPage(await src.doc.getPage(p.n), src.doc.canvasFactory) : undefined }); setBar(0.02 + 0.08 * (i + 1) / read.length); }
+      const empty = pages.filter(p => !p.text).length; if (empty && !hifi && !wantImages) log(`  ${empty} page(s) have no extractable text (scans?) and images are off: the model will not see them.`);
+    } else for (const p of await readRange(a, z)) pages.push({ n: p.n, text: p.text, image: p.image });
+    const body = { ...aiChoice(P), baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
       fileName: src.name, totalPages: src.count, range: [a, z], pages, pdfBase64: src.kind === 'pdf' ? b64(src.buf) : undefined,
-      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, pagesPerCall: +$('#per').value || 15, sendImages: wantImages, extra: $('#extra').value.trim() };
+      slug: $('#slug').value.trim() || slugify(src.name), lang: $('#lang').value, sendImages: wantImages, fidelity: hifi ? 'high' : undefined, review: !P.agent && $('#review').checked, extra: $('#extra').value.trim() };
     log('Uploading to the local server…');
     const res = await fetch('/api/generate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);
-    jobId = j.id; await follow(j.id, P);
+    jobId = j.id; await follow(j.id, !P.agent);
   } catch (e) { log('ERROR: ' + e.message); fail(); }
 };
-async function follow(id, P) {
+/* outline review: the build waits on the server until the edited plan comes back */
+const pagesLabel = ns => ns.length > 1 && ns.at(-1) - ns[0] === ns.length - 1 ? `${ns[0]}-${ns.at(-1)}` : ns.join(', ');
+function reviewRow(s) {
+  const li = document.createElement('li'); if (s.kind === 'cover') li.dataset.cover = '1';
+  li.innerHTML = `<span class="cv">${s.kind === 'cover' ? 'cover' : ''}</span><input class="pg mono" value="${esc(pagesLabel(s.pages))}" aria-label="pages" title="pages, e.g. 2-3 or 4, 6">`
+    + `<select aria-label="scene block">${blocks.map(b => `<option${b === s.block ? ' selected' : ''}>${b}</option>`).join('')}</select>`
+    + `<input class="in" value="${esc(s.intent)}" aria-label="what the spread teaches">`
+    + `<span class="ops"><button type="button" class="link" data-op="up" aria-label="move up">↑</button><button type="button" class="link" data-op="down" aria-label="move down">↓</button><button type="button" class="link" data-op="del" aria-label="delete this spread">✕</button></span>`;
+  li.onclick = e => { const op = e.target.dataset.op; if (op === 'up') li.previousElementSibling?.before(li); else if (op === 'down') li.nextElementSibling?.after(li); else if (op === 'del') li.remove(); };
+  return li;
+}
+function showReview(id, outline) {
+  const box = $('#outlineReview'), list = $('#rvList'); box.hidden = false; $('#rvHint').textContent = '';
+  $('#rvTitle').value = outline.title; list.replaceChildren(...outline.spreads.map(reviewRow));
+  $('#rvGo').onclick = async () => {
+    const spreads = [...list.children].map(li => ({ ...(li.dataset.cover && { kind: 'cover' }), pages: li.querySelector('.pg').value.split(/[,;\s]+/).filter(Boolean),
+      block: li.querySelector('select').value, intent: li.querySelector('.in').value.trim() })); // a cover moved down becomes a lesson (server side)
+    const res = await fetch(`/api/jobs/${id}/outline`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outline: { ...outline, title: $('#rvTitle').value.trim(), spreads } }) });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok) box.hidden = true; else $('#rvHint').textContent = j.error || res.statusText;
+  };
+}
+
+/** Progress of an API build from its log: the outline is the first 15 %, then each finished spread (✓, or ⚠ when code wrote it). */
+function apiProgress(text) {
+  const m = [...text.matchAll(/Outline(?: \(reviewed\))?: ".*?", (\d+) spreads/g)].pop(); if (!m) return 0.1 + (/Outline → /.test(text) ? 0.05 : 0);
+  return 0.25 + 0.73 * (text.match(/Spread \d+\/\d+ [✓⚠]/g) || []).length / +m[1]; // the log's lines, joined
+}
+/** staged: an API build, whose log tells its progress (an agent's or a single spread's does not) */
+async function follow(id, staged) {
   let since = 0;
-  setBar(P.agent ? null : 0.1);
+  setBar(staged ? 0.1 : null);
   for (;;) {
     const r = await fetch(`/api/jobs/${id}?since=${since}`).then(r => r.json());
     r.log.forEach(log); since = r.next;
-    if (!P.agent) { const m = [...logEl.textContent.matchAll(/Batch (\d+)\/(\d+)/g)].pop(); if (m) { const [i, n] = [+m[1], +m[2]]; const got = /answer received[^\n]*$/.test(logEl.lastChild?.textContent || ''); setBar(0.1 + 0.85 * ((i - 1) + (got ? 0.9 : 0.3)) / n); } }
+    if (staged) setBar(apiProgress(logEl.textContent));
     if (r.status === 'done') { setBar(1); $('#cancel').hidden = true; $('#openBook').href = `/viewer/?book=${encodeURIComponent(r.slug)}`; $('#exportBook').href = `/api/books/${encodeURIComponent(r.slug)}/export`; $('#doneRow').hidden = false; running = false; refreshGo(); loadBooks(); return; }
-    if (r.status === 'error') { fail(); return; }
+    if (r.status === 'review' && $('#outlineReview').hidden) showReview(id, r.outline);
+    if (r.status === 'error') { $('#outlineReview').hidden = true; fail(); return; }
     await new Promise(res => setTimeout(res, 900));
   }
 }
@@ -207,9 +291,29 @@ async function loadBooks() {
   const books = await fetch('/api/books').then(r => r.json()).catch(() => []);
   $('#books').innerHTML = books.length ? books.map(b => `<div class="book"><b>${esc(b.title)}</b>
     <span class="meta">${b.spreads} spreads · ${esc(b.lang || '')} · ${new Date(b.updated).toLocaleDateString()}${b.source?.file ? ' · ' + esc(b.source.file) : ''}</span>
-    <div class="row"><a class="link" href="/viewer/?book=${encodeURIComponent(b.slug)}" target="_blank">open</a><a class="link" href="/api/books/${encodeURIComponent(b.slug)}/export">download HTML</a><span class="meta">books/${esc(b.slug)}</span></div></div>`).join('')
+    <div class="row"><a class="link" href="/viewer/?book=${encodeURIComponent(b.slug)}" target="_blank">open</a><a class="link" href="/api/books/${encodeURIComponent(b.slug)}/export">download HTML</a><span class="meta">books/${esc(b.slug)}</span></div>${spreadList(b)}</div>`).join('')
     : '<p class="empty">No books yet.</p>';
 }
+/** The spreads of a book written one per call, each with a regenerate button; ⚠ marks those PopBook wrote when the model failed. */
+function spreadList(b) {
+  if (!b.list) return '';
+  const flagged = b.list.filter(s => s.fallback).length;
+  return `<details class="spreads"${flagged ? ' open' : ''}><summary>spreads${flagged ? ` · ⚠ ${flagged} written by PopBook` : ''}</summary><ol>${b.list.map((s, i) => `<li>${esc(s.title)}`
+    + `${s.fallback ? ` <span class="flag" title="the model failed 3 times: PopBook wrote its ${esc(s.fallback.join(', '))} from the page text">⚠ ${esc(s.fallback.join(', '))}</span>` : ''}`
+    + ` <button class="link" data-slug="${esc(b.slug)}" data-i="${i}">regenerate</button></li>`).join('')}</ol></details>`;
+}
+/* one spread written again by the AI picked above (an agent picked: the book's own model), the rest of the book untouched */
+$('#books').onclick = async e => {
+  const { slug, i } = e.target.dataset; if (!slug || running) return;
+  const P = prov(); startProgress(`${slug}, spread ${+i + 1}`);
+  try {
+    const body = P.agent ? {} : { ...aiChoice(P), baseUrl: P.id === 'compat' ? $('#baseUrl').value.trim() : undefined, apiKey: $('#apiKey').value.trim() || undefined,
+      sendImages: wantsImages(P), fidelity: highFidelity(P) ? 'high' : undefined };
+    const res = await fetch(`/api/books/${encodeURIComponent(slug)}/spreads/${i}/regenerate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await res.json(); if (!res.ok) throw new Error(j.error || res.statusText);
+    jobId = j.id; await follow(j.id, false);
+  } catch (err) { log('ERROR: ' + err.message); fail(); }
+};
 $('#refresh').onclick = loadBooks;
 
 function alertBox(msg) { $('#goHint').textContent = msg; $('#goHint').className = 'hint center warn'; }

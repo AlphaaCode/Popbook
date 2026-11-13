@@ -47,27 +47,61 @@ every scene block. Open them from *Your books* or directly at
 ## How it works
 
 The AI never writes 3D code. It writes one file, `book.json`, in a strict format
-([`prompts/system.md`](prompts/system.md) is exactly what the model reads). A hand-written engine renders any valid
+([`prompts/core.md`](prompts/core.md) and one [`prompts/blocks/<name>.md`](prompts/blocks) per scene block are exactly what the model reads). A hand-written engine renders any valid
 book, so results stay reliable even with small models.
 
 ```
-PDF pages ──► model / agent ──► book.json ──► validate (+ up to 2 repair rounds) ──► books/<slug>/ ──► 3D viewer
+pages ──► outline call ──► [review] ──► one call per 2–3 spreads (3 at a time) ──► autofix + validate ──► book.json ──► 3D viewer
 ```
 
-Long ranges are sent in batches (15 pages per call by default) and the spreads are merged. If an answer fails
-validation, the errors and the previous answer go back to the model, up to two times.
+With an API, one call reads every page and plans the book (an outline: which pages, which scene block, what each spread
+teaches); tick *let me review the outline* to edit, reorder or delete its spreads first. The spreads are then written
+two or three neighbours per call, which gets only their pages and their blocks' specs. Every spread is fixed in code first
+(`lib/autofix.js`) and checked on its own; one that still fails validation is sent back alone with its errors, then to the
+planner model once, and if it still fails
+PopBook writes that spread itself from the page text and flags it ⚠ in *Your books*, where any spread can be
+regenerated. Valid answers are kept in `.cache/`: the same pages with the same prompts and model cost nothing the
+second time. Agents (Claude Code, Codex, Gemini CLI) write the whole book in one session instead, from a bundle the studio
+prepares (see *Local agents* below).
 
 ## AI options
 
 | Option | What you need | Default model | What gets sent |
 |---|---|---|---|
-| **Claude API** | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | the page range as a real PDF document (sliced with pdf-lib) + extracted text |
-| **OpenAI API** | `OPENAI_API_KEY` | `gpt-6-astra` | page images (rendered in your browser) + text, JSON mode |
-| **Gemini API** | `GEMINI_API_KEY` | `gemini-4-argon` | the page range as an inline PDF + text, JSON response type |
-| **OpenAI-compatible** | a base URL (+ key if the server wants one) | `qwen2.5:14b` | text, plus page images if you tick *send page images* (vision models only) |
-| **Claude Code** | `claude` on your PATH, logged in | your Claude Code default | nothing leaves your machine except through the agent itself |
+| **Claude API** | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | page text + images of figure pages (the PDF itself at high fidelity); answers through a forced tool |
+| **OpenAI API** | `OPENAI_API_KEY` | `gpt-6-astra` | page text + images of figure pages; strict JSON schema |
+| **Gemini API** | `GEMINI_API_KEY` | `gemini-4-argon` | page text + images of figure pages (the PDF itself at high fidelity); JSON schema |
+| **OpenAI-compatible** | a base URL (+ key if the server wants one) | `qwen2.5:14b` | text, plus figure images if you tick *send page images* (vision models only); JSON schema |
+| **Claude Code, prompt only** | `claude` on your PATH, logged in | `opus` (plans), `haiku` (writes) | page text, one `claude -p` per call, no tools; JSON schema |
+| **Claude Code** | `claude` on your PATH, logged in | `sonnet` (Balanced) | `books/<slug>/input/`; the agent works in the repo folder |
 | **Codex CLI** | `codex` on your PATH | the CLI's default | same |
-| **Gemini CLI** | `gemini` on your PATH | the CLI's default | same |
+| **Gemini CLI** | `gemini` on your PATH | `gemini-4-argon` (Balanced) | same |
+
+**Presets.** *Budget*, *Balanced* and *Best* pick the path and the models instead of you. Budget takes the cheapest path:
+one call writes the whole book (one per 15 pages), with all the rules and every block's spec; no outline, so no outline review
+and no *regenerate this spread*. Balanced and Best take the staged path: the **planner** writes the outline (one call), the
+**writer** the spreads (2–3 per call, the bulk of the tokens). A new build starts on Budget with Gemini and local models
+(OpenAI-compatible servers), on Balanced with the others; the job log and the estimate name the path and count the requests.
+Gemini's free tier allows 5 requests a minute and 20 a day per model: PopBook spaces requests to Gemini (and to
+OpenAI-compatible servers) 13 s apart, writes their staged spreads one call at a time, and stops with a clear message when the
+daily limit is reached.
+
+| Preset | Path | Planner | Writer | Figure images |
+|---|---|---|---|---|
+| Budget | one call per 15 pages | — | cheap model, low reasoning | yes |
+| Balanced | outline, then writers | default model, medium reasoning | cheap model, low reasoning | yes |
+| Best | outline, then writers | default model, medium reasoning | default model, medium reasoning | yes |
+
+The cheap model is a known cheaper sibling (`gemini-3.8-flash`, `claude-haiku-5-5`, `haiku`), else the default model.
+`PLANNER_MODEL` / `WRITER_MODEL` in `.env` override a role and may send it to another provider: a known model id
+(`claude-opus-5-5` uses `ANTHROPIC_API_KEY`) or `provider:model` (`compat:llama3:8b`). The studio's *planner model* and
+*writer model* fields override both. Models, prices and what each model accepts live in [`lib/models.js`](lib/models.js).
+
+**Structured output.** Every staged call sends the JSON schema of its answer, generated from the shape table in
+[`lib/validate.js`](lib/validate.js): the outline's, or the writer's for the book's blocks (Budget sends none: a schema of
+every block would outweigh their specs). Small local models gain the most:
+Ollama turns the schema into its `format`, llama.cpp into a GBNF grammar, so the answer cannot leave the shape. A server
+that refuses the schema is asked again without it.
 
 **Keys.** Put them in `.env` (copy [`.env.example`](.env.example)) or paste them in the studio. A pasted key is
 sent only to the local server for that job and is never written to disk. Tick *remember on this computer* to keep it
@@ -87,13 +121,41 @@ writing faithful, concise text.
 | Groq | `https://api.groq.com/openai/v1` |
 
 **Local agents.** The studio finds `claude`, `codex` and `gemini` on your PATH and runs them in the repo folder.
-They read `CLAUDE.md` / `AGENTS.md`, write `books/<slug>/book.json`, run the checker and fix their own errors; their
-output streams into the build log. Claude Code runs with
+It first writes `books/<slug>/input/`: `pages.md` (every page's text), `fig-<n>.jpg` (the figure pages) and, when a plain
+model of the same family can plan (`claude -p`, or the Gemini / OpenAI API with a key), `outline.json`. `PROMPT.md` then
+names exactly the files to read and forbids opening the PDF or exploring the repo. The agent writes
+`books/<slug>/book.json`, runs the checker and fixes its own errors; its output streams into the build log. Claude Code runs with
 `--permission-mode acceptEdits --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,Bash(node tools/check.mjs:*),Bash(node tools/pdf2pages.mjs:*)"`.
 To change a command, set `AGENT_CMD_CLAUDE`, `AGENT_CMD_CODEX` or `AGENT_CMD_GEMINI` in `.env`; the prompt is
 appended as the last argument.
 
 **Testing without any AI:** `POPBOOK_MOCK=1 npm start` adds a *Mock* provider that returns the example book.
+
+## Cost
+
+Measured with `npm run eval` on pages 1–10 of two course PDFs, one run each (`eval/`); the studio's estimate predicts them
+for your own pages before you build.
+
+**Gemini, gemini-3.8-flash: v0.1 vs the single-call path** (Budget's path, measured when it was built):
+
+| PDF | v0.1 | v0.2 single call | |
+|---|---|---|---|
+| Claude-Call-Me-Guide | $0.047 · 14.3k in / 9.6k out | $0.015 · 13.8k in / 1.3k out | 3.1× cheaper |
+| coursCalculParallel2025 | $0.046 · 10.1k in / 10.2k out | $0.017 · 8.6k in / 2.7k out | 2.7× cheaper |
+
+Most of the saving is output: v0.1 let the model think at will. Budget's length guidance, added since, made one book's output
+46 % longer on gemini-3.6-flash, which thinks at its own default level.
+
+**Claude Code (`claude -p`), haiku for every role: Budget vs Balanced.** Your Claude plan pays, so tokens only:
+
+| PDF | Budget | Balanced |
+|---|---|---|
+| Claude-Call-Me-Guide | 1 request · 13.3k in / 9.4k out · 44 s · 6 spreads | 4 requests · 38.3k in / 17.0k out · 61 s · 8 spreads |
+| coursCalculParallel2025 | 1 request · 7.8k in / 10.7k out · 47 s · 5 spreads | 3 requests · 34.5k in / 18.0k out · 82 s · 5 spreads |
+
+Free Gemini keys allow about 20 requests a day per model; one 10-page book uses 1.
+
+Untested: caching and cost on the Claude API and OpenAI with real keys. The figures above are Gemini and `claude -p` only.
 
 ## Agent mode (no studio)
 
@@ -107,7 +169,7 @@ Or ask any coding agent to "follow AGENTS.md to make a pop-up book from lesson.p
 
 ```bash
 node tools/pdf2pages.mjs lesson.pdf --pages 1-10 --out books/my-lesson   # text per page + source.pdf
-# write books/my-lesson/book.json following prompts/system.md
+# write books/my-lesson/book.json following prompts/core.md and prompts/blocks/
 node tools/check.mjs books/my-lesson                                     # repeat until OK
 open http://localhost:5173/viewer/?book=my-lesson
 ```
@@ -142,8 +204,8 @@ Model expressions (`expr`, `when`) use a small safe evaluator ([`lib/expr.js`](l
    clickable meshes, and call `ctx.touch(id)` for every stamp target.
 2. **Validator:** add the name to `BLOCKS` in [`lib/validate.js`](lib/validate.js), normalize its fields in the
    `switch`, and return its target ids from `sceneTargets()`.
-3. **Prompt:** document it in [`prompts/system.md`](prompts/system.md), with a JSON example, limits, interactive ids
-   and a row in the "idea → block" table. Models only use what is documented there.
+3. **Prompt:** document it in `prompts/blocks/<name>.md`, with a JSON example, limits and interactive ids, and add a
+   row to the "idea → block" table in [`prompts/core.md`](prompts/core.md). Models only use what is documented there.
 4. **Demo + test:** add a spread to `books/blocks-demo/book.json`, then run `npm test` and open the spread in the
    viewer.
 
@@ -180,7 +242,7 @@ server.js           local server (no framework), 127.0.0.1:5173, proxies all AI 
 app/                the studio
 viewer/             engine.js (book, camera, page turn, left page), blocks.js, kit.js, i18n.js
 lib/                validate.js, expr.js, providers.js, generate.js, export.js, env.js
-prompts/system.md   the instructions given to the model
+prompts/            core.md (the rules) and blocks/<name>.md (one scene block each): what the model reads
 books/<slug>/       book.json, source.pdf, pages/, scenes/ (custom, agent mode)
 tools/              check.mjs, pdf2pages.mjs, export.mjs
 ```
@@ -192,9 +254,9 @@ tools/              check.mjs, pdf2pages.mjs, export.mjs
   a bad key, an unknown model name or exhausted credit.
 - **Ollama answers are cut off or ignore the instructions.** Ollama's default context window is small. Start it
   with a larger one, for example `OLLAMA_CONTEXT_LENGTH=32768 ollama serve`, and use base URL
-  `http://localhost:11434/v1`. Small local models often fail validation; lower *pages per call* (5–8), or use a
+  `http://localhost:11434/v1`. Small local models often fail validation: regenerate the spreads flagged ⚠ with a
   bigger model.
-- **"The JSON in the answer is cut off".** The model hit its output limit. Lower *pages per call*.
+- **"The JSON in the answer is cut off".** A spread hit its output limit. Raise `SPREAD_MAX_TOKENS` in `.env`.
 - **An agent is "not installed".** The command must be on the PATH of the terminal that runs `npm start`. Run
   `claude --version` (or `codex`, `gemini`) there first, and log in once interactively.
 - **Windows.** Everything works from PowerShell, cmd or Git Bash. npm-installed agent CLIs (`.cmd` shims) are
