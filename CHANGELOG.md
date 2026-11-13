@@ -92,6 +92,8 @@ Routing and weak models (v0.2 phase 4):
   per 15 pages), from all the rules and every block spec, with autofix and phase 2's narrow repairs; no outline, review or
   regenerate. A new build starts on Budget with Gemini and OpenAI-compatible servers, on Balanced with Claude, OpenAI and
   `claude -p`. The job log and the studio's estimate name the path. Figure images are on for Budget too, as in phase 2.
+- **Budget asks for full explanations**: `concept` 2–3 full sentences, `why` 2, formulas never shortened. Cours on
+  gemini-3.6-flash: concept 134 → 212 characters, why 138 → 188 (baseline 221, 199), input +0.9 %, output +46 % (more thinking).
 - **Gemini's free tier** (5 requests a minute, 20 a day per model). Requests to Gemini and OpenAI-compatible servers are spaced
   at least 13 s apart, and their staged writers run one at a time (3 for Claude and OpenAI). A per-minute 429 waits its
   `retryDelay` and tries again; the daily quota stops the build at once: "Gemini free tier: daily limit for <model> reached…".
