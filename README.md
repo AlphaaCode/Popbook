@@ -81,7 +81,10 @@ prepares (see *Local agents* below).
 one call writes the whole book (one per 15 pages), with all the rules and every block's spec; no outline, so no outline review
 and no *regenerate this spread*. Balanced and Best take the staged path: the **planner** writes the outline (one call), the
 **writer** the spreads (2–3 per call, the bulk of the tokens). A new build starts on Budget with Gemini and local models
-(OpenAI-compatible servers), on Balanced with the others; the job log and the estimate name the path.
+(OpenAI-compatible servers), on Balanced with the others; the job log and the estimate name the path and count the requests.
+Gemini's free tier allows 5 requests a minute and 20 a day per model: PopBook spaces requests to Gemini (and to
+OpenAI-compatible servers) 13 s apart, writes their staged spreads one call at a time, and stops with a clear message when the
+daily limit is reached.
 
 | Preset | Path | Planner | Writer | Figure images |
 |---|---|---|---|---|

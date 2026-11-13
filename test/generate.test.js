@@ -10,6 +10,7 @@ process.env.POPBOOK_MOCK = '1'; // before providers.js is evaluated
 const { generate, regenerateSpread, roles, BOOKS, CACHE, outlineCap, spreadCap, loadPrompts } = await import('../lib/generate.js');
 delete process.env.PLANNER_MODEL; delete process.env.WRITER_MODEL; // a developer's shell must not reroute the tests
 const { BLOCKS, validateBook } = await import('../lib/validate.js');
+(await import('../lib/providers.js')).PACE.compat = 0; // the fake server has no request limit
 
 const EX = JSON.parse(await fs.readFile(new URL('../books/calcul-parallele/book.json', import.meta.url), 'utf8'));
 const COVER = EX.spreads[0], BARS = EX.spreads[3]; // a network cover and a bars lesson

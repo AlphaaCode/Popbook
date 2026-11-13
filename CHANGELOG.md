@@ -92,6 +92,11 @@ Routing and weak models (v0.2 phase 4):
   per 15 pages), from all the rules and every block spec, with autofix and phase 2's narrow repairs; no outline, review or
   regenerate. A new build starts on Budget with Gemini and OpenAI-compatible servers, on Balanced with Claude, OpenAI and
   `claude -p`. The job log and the studio's estimate name the path. Figure images are on for Budget too, as in phase 2.
+- **Gemini's free tier** (5 requests a minute, 20 a day per model). Requests to Gemini and OpenAI-compatible servers are spaced
+  at least 13 s apart, and their staged writers run one at a time (3 for Claude and OpenAI). A per-minute 429 waits its
+  `retryDelay` and tries again; the daily quota stops the build at once: "Gemini free tier: daily limit for <model> reached…".
+  The estimate says how many requests a build uses ("uses 1 request", "uses ~7 requests"; on Gemini "free tier allows 20 a
+  day"). The studio keeps the preset per provider, so Gemini stays on Budget unless Balanced or Best is picked for it.
 - **Agent bundle.** A local agent gets `books/<slug>/input/` (`pages.md`, `fig-<n>.jpg`, and `outline.json` when a plain
   model of its family can plan: `claude -p`, or the Gemini / OpenAI API with a key) and a short `PROMPT.md` that names
   the files to read and forbids opening the PDF or exploring the repo. Claude Code and Gemini CLI get `--model` per preset.

@@ -3,8 +3,9 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { callModel, describeClaudeEvent, claudeUsage, addUsage, emptyUsage, fmtUsage, RETRY } from '../lib/providers.js';
+import { callModel, describeClaudeEvent, claudeUsage, addUsage, emptyUsage, fmtUsage, RETRY, PACE } from '../lib/providers.js';
 RETRY.delays = [1, 1, 1]; // retries in milliseconds, not seconds
+PACE.gemini = PACE.compat = 0; // no request pace, except where a test sets one
 
 const sse = events => events.map(e => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join('');
 const STREAMS = {
@@ -22,11 +23,15 @@ before(async () => {
   server = http.createServer((req, res) => {
     let body = ''; req.on('data', c => body += c); req.on('end', () => {
       let path = req.url.split('?')[0]; seen[path] = { headers: req.headers, body: JSON.parse(body) };
-      requests.push({ path, schema: !!seen[path].body.response_format });
+      requests.push({ path, schema: !!seen[path].body.response_format, t: Date.now() });
       if (path === '/noschema/chat/completions' && seen[path].body.response_format) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"response_format json_schema is not supported"}}'); }
       if (path === '/fail/chat/completions') { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"bad key"}}'); }
       if (path === '/flaky/chat/completions' && requests.filter(q => q.path === path).length <= 2) { res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '0.2' }); return res.end('{"error":{"message":"high demand"}}'); }
-      if (path === '/busy/chat/completions') { res.writeHead(429, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"slow down","details":[{"retryDelay":"0.1s"}]}}'); }
+      if (path === '/busy/chat/completions') { res.writeHead(429, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"slow down","details":[{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]},{"retryDelay":"0.1s"}]}}'); }
+      if (path === '/daily/v1beta/models/m:streamGenerateContent') { res.writeHead(429, { 'content-type': 'application/json' }); // Gemini's shape: an array, the quota in the details
+        return res.end(JSON.stringify([{ error: { code: 429, message: 'You exceeded your current quota', status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+          violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests', quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', quotaDimensions: { model: 'gemini-3.6-flash' }, quotaValue: '20' }] },
+          { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '40s' }] } }])); }
       if (path === '/flaky/chat/completions') path = '/chat/completions';
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       if (path === '/silent/chat/completions') return res.write(': hello\n'); // then nothing, ever
@@ -140,6 +145,21 @@ test('a transient failure is tried again: Retry-After respected, 3 retries at mo
   assert.equal(n.length, 3); // a refused connection: 3 retries
   const ac = new AbortController(); RETRY.delays = [5000]; setTimeout(() => ac.abort(), 50);
   try { await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/busy', model: 'x', signal: ac.signal }), /abort/i); } finally { RETRY.delays = [1, 1, 1]; } // cancel stops the wait
+});
+
+test("Gemini's daily quota stops at once with a clear message; the per-minute one waits and retries (above)", async () => {
+  requests = [];
+  await assert.rejects(callModel('gemini', { system: 's', parts, apiKey: 'k', baseUrl: base + '/daily', model: 'm' }),
+    { message: 'Gemini free tier: daily limit for gemini-3.6-flash reached. Resets around midnight Pacific. Try another model or wait.' });
+  assert.equal(requests.length, 1); // no retry: it would only spend the wait
+});
+
+test('PACE spaces the requests to a provider, across concurrent callers', async () => {
+  PACE.compat = 150; requests = []; const notes = [];
+  try { await Promise.all([1, 2, 3].map(() => callModel('compat', { system: 's', parts, baseUrl: base, model: 'x', onNote: n => notes.push(n) }))); } finally { PACE.compat = 0; }
+  const ts = requests.map(q => q.t);
+  assert.ok(ts[1] - ts[0] >= 140 && ts[2] - ts[1] >= 140, ts.join(' ')); // timer slack: a few ms
+  assert.match(notes[0], /^waiting 0 s: at most one request every 0.15 s/);
 });
 
 test('a request that goes silent for REQUEST_TIMEOUT_MS is a transient failure: tried again, then reported as a timeout', async () => {
