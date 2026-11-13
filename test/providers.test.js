@@ -23,7 +23,7 @@ before(async () => {
   server = http.createServer((req, res) => {
     let body = ''; req.on('data', c => body += c); req.on('end', () => {
       let path = req.url.split('?')[0]; seen[path] = { headers: req.headers, body: JSON.parse(body) };
-      requests.push({ path, schema: !!seen[path].body.response_format, t: Date.now() });
+      requests.push({ path, schema: !!seen[path].body.response_format, think: !!seen[path].body.generationConfig?.thinkingConfig, t: Date.now() });
       if (path === '/noschema/chat/completions' && seen[path].body.response_format) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"response_format json_schema is not supported"}}'); }
       if (path === '/fail/chat/completions') { res.writeHead(401, { 'content-type': 'application/json' }); return res.end('{"error":{"message":"bad key"}}'); }
       if (path === '/flaky/chat/completions' && requests.filter(q => q.path === path).length <= 2) { res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '0.2' }); return res.end('{"error":{"message":"high demand"}}'); }
@@ -33,6 +33,10 @@ before(async () => {
           violations: [{ quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests', quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', quotaDimensions: { model: 'gemini-3.6-flash' }, quotaValue: '20' }] },
           { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '40s' }] } }])); }
       if (path === '/flaky/chat/completions') path = '/chat/completions';
+      if (path === '/nothink/v1beta/models/m:streamGenerateContent') {
+        if (seen[path].body.generationConfig.thinkingConfig) { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('[{"error":{"code":400,"message":"Thinking budget is not supported for this model."}}]'); }
+        path = '/v1beta/models/m:streamGenerateContent';
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       if (path === '/silent/chat/completions') return res.write(': hello\n'); // then nothing, ever
       if (path === '/slow/chat/completions') { const s = STREAMS['/chat/completions'], n = 5; // 5 chunks 100 ms apart: 400 ms in all
@@ -145,6 +149,14 @@ test('a transient failure is tried again: Retry-After respected, 3 retries at mo
   assert.equal(n.length, 3); // a refused connection: 3 retries
   const ac = new AbortController(); RETRY.delays = [5000]; setTimeout(() => ac.abort(), 50);
   try { await assert.rejects(callModel('compat', { system: 's', parts, baseUrl: base + '/busy', model: 'x', signal: ac.signal }), /abort/i); } finally { RETRY.delays = [1, 1, 1]; } // cancel stops the wait
+});
+
+test('a model that refuses the reasoning setting is asked again without it, once, and not sent it again', async () => {
+  requests = []; const notes = [], o = { system: 's', parts, apiKey: 'k', baseUrl: base + '/nothink', model: 'm', reasoning: { budget: 1024 }, onNote: n => notes.push(n) };
+  assert.equal((await callModel('gemini', o)).text, '{"title":"C"}');
+  await callModel('gemini', o);
+  assert.deepEqual(requests.map(q => q.think), [true, false, false]);
+  assert.match(notes[0], /refused the reasoning setting, asking again without it \(400 .*Thinking budget/);
 });
 
 test("Gemini's daily quota stops at once with a clear message; the per-minute one waits and retries (above)", async () => {

@@ -102,6 +102,8 @@ Routing and weak models (v0.2 phase 4):
   the files to read and forbids opening the PDF or exploring the repo. Claude Code and Gemini CLI get `--model` per preset.
 
 ### Fixed
+- A model that refuses the reasoning setting (a 400 naming thinking or reasoning) is asked again without it, once, and
+  called without it from then on, like a refused JSON schema. `gemini-3.6-flash` is in the model table (priced, no thinking budget).
 - A model call that hangs no longer stalls a build for 5 minutes: after 90 s without a byte back (`REQUEST_TIMEOUT_MS` in `.env`)
   it is cut and tried again like a dropped connection. A long answer that keeps streaming is not cut; `claude -p` now streams too.
 - One transient error no longer kills a build: a 429, a 5xx or a dropped connection is tried again up to 3 times, after 2 s,
